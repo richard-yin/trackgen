@@ -25,6 +25,7 @@ Three part categories are recognised:
 - **`writeScore()` / `readScore()`** are non-functional in MS4
 - **Automated export**: `cmd("export-audio")` opens the system save dialog; the user must click Save for each track. The plugin handles all mute setup automatically.
 - **Save dialog filename**: no API hook exists to pre-populate `cmd("export-audio")`'s filename field. Best-effort workaround: immediately before each `cmd("export-audio")` call, copy the suggested filename (e.g. `Soprano 1.mp3`) to the system clipboard via a hidden QML `TextEdit` (`selectAll()` + `copy()`), and display it prominently in Screen 2 so the user can paste it. `curScore.path` gives the score's directory, which MuseScore uses as the default folder. Note: a regression in MS4.7.1 requires users to type the extension explicitly; include `.mp3` in the clipboard text.
+- **Trim script generation**: when a measure range is set, `cursor.time` is used to compute exact wall-clock trim points (in seconds, to millisecond precision, accounting for all tempo changes). `trim_tracks.sh` (Linux/macOS) and `trim_tracks.bat` (Windows) are written to the score's directory via `XMLHttpRequest` synchronous PUT to a `file:///` URI. Qt local PUT reports `status === 0` on success. If the write fails (sandbox restrictions), Screen 3 shows a copy-paste fallback with the full script text. Both scripts require `ffmpeg` and use `-c copy` (no re-encode). Do not use `curScore.duration` for sub-second precision — it is an `int` (whole seconds only); use `cursor.time` instead.
 - Mid-measure configuration changes require no special handling: inactive staves simply contain rests and contribute silence.
 
 ---
@@ -463,6 +464,15 @@ part.instruments[j].channels[k].volume      = 64      // 0–127; e.g. 64 = 50% 
 // https://musescore.github.io/MuseScore_PluginAPI_Docs/plugins/html/class_ms_1_1_plugin_a_p_i_1_1_plugin_a_p_i.html
 cmd("export-audio")     // opens system save dialog (best-effort; behavior unverified in MS4)
 quit()                  // safe quit — never Qt.quit(), which crashes MS4
+
+// Cursor — tick-to-time conversion
+// https://musescore.github.io/MuseScore_PluginAPI_Docs/plugins/html/class_ms_1_1_plugin_a_p_i_1_1_cursor.html
+var cur = curScore.newCursor()
+cur.rewindToTick(tick)  // position cursor at a specific tick
+cur.time                // wall-clock seconds at that tick (double, read-only)
+                        // integrates the full tempo map — use this, not curScore.duration
+                        // curScore.duration is int (whole seconds only, too imprecise)
+cur.tempo               // tempo at current tick in beats per second (qreal, read-only)
 ```
 
 **MS4.4 / Qt 6 QML import requirements** (per [updating guide](https://github.com/musescore/MuseScore/wiki/Updating-plugins-for-MuseScore-Studio-4.4)):

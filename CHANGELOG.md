@@ -2,6 +2,23 @@
 
 All notable changes to TrackGen are documented here.
 
+## [1.0.1] — 2026-07-28
+
+### Added
+
+**Post-export trim scripts**
+- When a measure range is set, TrackGen now writes `trim_tracks.sh` (Linux/macOS) and `trim_tracks.bat` (Windows) to the score's directory immediately before export begins
+- Both scripts loop over `*.mp3` in their own directory and trim each file in-place using `ffmpeg -c copy` (no re-encode), then replace the original
+- Trim timestamps are computed with millisecond precision via `cursor.rewindToTick()` + `cursor.time`, which integrates the full tempo map; only the relevant end(s) are trimmed (start-only, end-only, or both, depending on the range)
+- Screen 3 (All done) shows the script path and run instructions when scripts are written successfully, or a read-only copy-paste fallback block when file write is unavailable in the plugin sandbox
+- No scripts are written for full-score exports
+
+### Fixed
+
+- `startExport()` correctly resets all trim state properties on each new export session
+
+---
+
 ## [1.0.0] — 2026-07-28
 
 Initial release.

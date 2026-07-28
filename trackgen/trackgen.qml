@@ -6,14 +6,14 @@ import "voiceTypes.js" as VT
 MuseScore {
     //4.4 title:        "TrackGen"
     //4.4 description:  "Generate per-singer vocal learning tracks"
-    //4.4 version:      "1.0.0"
+    //4.4 version:      "1.0.1"
     //4.4 categoryCode: "composing-arranging-tools"
 
     Component.onCompleted: {
         if (mscoreMajorVersion === 4 && mscoreMinorVersion <= 3) {
             title        = "TrackGen"
             description  = "Generate per-singer vocal learning tracks"
-            version      = "1.0.0"
+            version      = "1.0.1"
             categoryCode = "composing-arranging-tools"
         }
     }
@@ -40,6 +40,12 @@ MuseScore {
     property int  lastMeasureNo:   1    // highest displayNo in measureMap
     property int  measureStart:    1    // user-selected From measure (display number)
     property int  measureEnd:      1    // user-selected To measure (display number)
+
+    // ── Trim script state ─────────────────────────────────────────────────────
+    property var    trimInfo:          null   // { ss, to } — null means full range
+    property bool   trimScriptWritten: false
+    property string trimExportDir:     ""
+    property string trimFallbackText:  ""
 
     // ── Settings ──────────────────────────────────────────────────────────────
     property int upperVoiceProgram: -1   // -1 = keep original
@@ -79,6 +85,71 @@ MuseScore {
             tickEnd = ls ? ls.tick + 1 : 2147483647
         }
         return { tickStart: tickStart, tickEnd: tickEnd }
+    }
+
+    // Returns { ss, to } in seconds for the current measure range, where either
+    // value may be null meaning "don't trim that end".
+    // Returns null when the range spans the full score.
+    // Uses cursor.time which integrates the full tempo map internally.
+    function computeTrimSeconds() {
+        if (measureStart <= firstMeasureNo && measureEnd >= lastMeasureNo) return null
+        var tr  = tickRangeForDisplayRange(measureStart, measureEnd)
+        var cur = curScore.newCursor()
+        var ss  = null, to = null
+        if (measureStart > firstMeasureNo) {
+            cur.rewindToTick(tr.tickStart)
+            ss = cur.time.toFixed(3)
+        }
+        if (measureEnd < lastMeasureNo) {
+            cur.rewindToTick(tr.tickEnd)
+            to = cur.time.toFixed(3)
+        }
+        return { ss: ss, to: to }
+    }
+
+    // Returns { sh, bat } script text for the given trim { ss, to }.
+    function generateScripts(trim) {
+        var label = "measures " + measureStart + "\u2013" + measureEnd
+        var ffSh  = "ffmpeg -y -i \"$f\""
+            + (trim.ss !== null ? " -ss " + trim.ss : "")
+            + (trim.to !== null ? " -to " + trim.to : "")
+            + " -c copy \"$f.tmp.mp3\" && mv \"$f.tmp.mp3\" \"$f\""
+        var ffBat = "ffmpeg -y -i \"%%f\""
+            + (trim.ss !== null ? " -ss " + trim.ss : "")
+            + (trim.to !== null ? " -to " + trim.to : "")
+            + " -c copy \"%%f.tmp.mp3\" && move /y \"%%f.tmp.mp3\" \"%%f\""
+        var sh = "#!/bin/sh\n"
+            + "# TrackGen \u2014 trim tracks to " + label + "\n"
+            + "# Requires: ffmpeg  https://ffmpeg.org\n"
+            + "set -eu\n"
+            + "DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\n"
+            + "for f in \"$DIR\"/*.mp3; do\n"
+            + "  " + ffSh + "\n"
+            + "done\n"
+            + "echo \"Done.\"\n"
+        var bat = "@echo off\r\n"
+            + "rem TrackGen \u2014 trim tracks to " + label + "\r\n"
+            + "rem Requires: ffmpeg  https://ffmpeg.org\r\n"
+            + "setlocal\r\n"
+            + "set DIR=%~dp0\r\n"
+            + "for %%f in (\"%DIR%*.mp3\") do (\r\n"
+            + "    " + ffBat + "\r\n"
+            + ")\r\n"
+            + "echo Done.\r\n"
+        return { sh: sh, bat: bat }
+    }
+
+    // Writes text to a local file via XMLHttpRequest PUT.
+    // Returns true on success (Qt local PUT reports status 0).
+    function writeFile(path, content) {
+        try {
+            var xhr = new XMLHttpRequest()
+            xhr.open("PUT", "file:///" + path.replace(/\\/g, "/"), false)
+            xhr.send(content)
+            return (xhr.status === 0 || xhr.status === 200 || xhr.status === 201)
+        } catch (e) {
+            return false
+        }
     }
 
     // Core classification + track-list rebuild. Called on init and whenever
@@ -163,7 +234,28 @@ MuseScore {
         muteSnap    = VT.saveMuteStates(curScore)
         progSnap    = VT.saveChannelPrograms(curScore)
         volSnap     = VT.saveChannelVolumes(curScore)
-        screen      = 2
+
+        // Compute trim timestamps and write helper scripts when a range is set.
+        trimInfo          = null
+        trimScriptWritten = false
+        trimExportDir     = ""
+        trimFallbackText  = ""
+        var trim = computeTrimSeconds()
+        if (trim) {
+            trimInfo = trim
+            var scripts = generateScripts(trim)
+            var dir = curScore.path.substring(0, curScore.path.lastIndexOf("/"))
+            trimExportDir = dir
+            var okSh  = writeFile(dir + "/trim_tracks.sh",  scripts.sh)
+            var okBat = writeFile(dir + "/trim_tracks.bat", scripts.bat)
+            trimScriptWritten = okSh || okBat
+            if (!trimScriptWritten)
+                trimFallbackText = scripts.sh
+                    + "\n\n--- Windows (trim_tracks.bat) ---\n\n"
+                    + scripts.bat
+        }
+
+        screen = 2
         doExportTrack(0)
     }
 
@@ -593,26 +685,88 @@ MuseScore {
         anchors.fill: parent
         visible: screen === 3
 
-        Column {
-            anchors.centerIn: parent
-            spacing: 16
+        // Summary ──────────────────────────────────────────────────────────────
+        Label {
+            id: s3Title
+            anchors { top: parent.top; left: parent.left; right: parent.right
+                      topMargin: 20; leftMargin: 16; rightMargin: 16 }
+            text: "All done!  "
+                  + exportQueue.length + " track"
+                  + (exportQueue.length === 1 ? "" : "s")
+                  + " exported."
+            font.bold: true; font.pixelSize: 15
+            horizontalAlignment: Text.AlignHCenter
+        }
+        Label {
+            id: s3Subtitle
+            anchors { top: s3Title.bottom; left: parent.left; right: parent.right
+                      topMargin: 8; leftMargin: 16; rightMargin: 16 }
+            text: "Mute states, programs, and volumes have been restored."
+            font.pixelSize: 12; color: "#666666"
+            horizontalAlignment: Text.AlignHCenter
+        }
 
+        // Trim section — only visible when a measure range was active ──────────
+        Item {
+            id: s3TrimSection
+            visible: trimInfo !== null
+            anchors { top: s3Subtitle.bottom; left: parent.left; right: parent.right
+                      bottom: s3Sep.top
+                      topMargin: 16; leftMargin: 16; rightMargin: 16; bottomMargin: 8 }
+
+            // Scripts written successfully
             Label {
-                text: "All done!  "
-                      + exportQueue.length + " track"
-                      + (exportQueue.length === 1 ? "" : "s")
-                      + " exported."
-                font.bold: true; font.pixelSize: 15
-                anchors.horizontalCenter: parent.horizontalCenter
+                visible: trimScriptWritten
+                anchors { top: parent.top; left: parent.left; right: parent.right }
+                text: "trim_tracks.sh and trim_tracks.bat written to:\n" + trimExportDir
+                      + "\n\nRun the appropriate script once to trim all tracks to the selected range."
+                      + "\nRequires ffmpeg \u2014 https://ffmpeg.org"
+                font.pixelSize: 12; wrapMode: Text.WordWrap; color: "#225500"
             }
-            Label {
-                text: "Mute states, programs, and volumes have been restored."
-                font.pixelSize: 12; color: "#666666"
-                anchors.horizontalCenter: parent.horizontalCenter
+
+            // Fallback: file write unavailable — show copy-paste block
+            Column {
+                visible: !trimScriptWritten
+                anchors { top: parent.top; left: parent.left; right: parent.right
+                          bottom: parent.bottom }
+                spacing: 6
+
+                Label {
+                    width: parent.width
+                    text: "File write unavailable \u2014 copy and run to trim all tracks:"
+                    font.pixelSize: 12; wrapMode: Text.WordWrap
+                }
+                ScrollView {
+                    width: parent.width
+                    height: parent.height - 26
+                    clip: true
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+                    TextArea {
+                        text: trimFallbackText
+                        readOnly: true
+                        selectByMouse: true
+                        font.family: "monospace"; font.pixelSize: 11
+                        wrapMode: Text.NoWrap
+                        background: Rectangle { color: "#f4f4f4"; border.color: "#cccccc" }
+                    }
+                }
             }
+        }
+
+        // Footer ───────────────────────────────────────────────────────────────
+        Rectangle {
+            id: s3Sep
+            anchors { bottom: s3BtnRow.top; left: parent.left; right: parent.right
+                      bottomMargin: 8; leftMargin: 16; rightMargin: 16 }
+            height: 1; color: "#cccccc"
+        }
+        Row {
+            id: s3BtnRow
+            anchors { bottom: parent.bottom; right: parent.right
+                      bottomMargin: 12; rightMargin: 14 }
             Button {
                 text: "Close"
-                anchors.horizontalCenter: parent.horizontalCenter
                 onClicked: quit()
             }
         }
