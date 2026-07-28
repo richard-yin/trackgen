@@ -2,7 +2,9 @@
 
 All notable changes to TrackGen are documented here.
 
-## [1.2.1] — 2026-07-28
+## [1.0.0] — 2026-07-28
+
+Initial release.
 
 ### Added
 
@@ -15,7 +17,7 @@ All notable changes to TrackGen are documented here.
 
 ---
 
-## [1.2.0] — 2026-07-28
+## [0.3.0] — 2026-07-28
 
 ### Added
 
@@ -40,7 +42,7 @@ All notable changes to TrackGen are documented here.
 
 ---
 
-## [1.1.0] — 2026-07-28
+## [0.2.0] — 2026-07-28
 
 ### Added
 
@@ -62,9 +64,7 @@ All notable changes to TrackGen are documented here.
 
 ---
 
-## [1.0.0] — 2026-07-28
-
-Initial release.
+## [0.1.0] — 2026-07-28
 
 ### Added
 

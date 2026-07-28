@@ -6,14 +6,14 @@ import "voiceTypes.js" as VT
 MuseScore {
     //4.4 title:        "TrackGen"
     //4.4 description:  "Generate per-singer vocal learning tracks"
-    //4.4 version:      "1.2.1"
+    //4.4 version:      "1.0.0"
     //4.4 categoryCode: "composing-arranging-tools"
 
     Component.onCompleted: {
         if (mscoreMajorVersion === 4 && mscoreMinorVersion <= 3) {
             title        = "TrackGen"
             description  = "Generate per-singer vocal learning tracks"
-            version      = "1.2.1"
+            version      = "1.0.0"
             categoryCode = "composing-arranging-tools"
         }
     }
