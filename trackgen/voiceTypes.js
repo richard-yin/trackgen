@@ -105,6 +105,15 @@ var VOICE_MAP = {
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
+// Returns { prefix:"SOLO", voiceName } if name matches [SOLO] prefix, else null.
+// voiceName is the free-form text after [SOLO]; defaults to "Soloist" if blank.
+function _parseSolo(name) {
+    if (!name || name.length === 0) return null;
+    var m = name.match(/^\[SOLO\]\s*(.*)/i);
+    if (!m) return null;
+    return { prefix: "SOLO", voiceName: m[1].trim() || "Soloist" };
+}
+
 function _partInArray(part, arr) {
     for (var i = 0; i < arr.length; i++) {
         if (arr[i] === part) return true;
@@ -141,21 +150,35 @@ function parseStaff(name) {
 }
 
 // classifyScore(score)
-// → { slots, instrumentals, modifierPresent, partMeta }
+// → { slots, instrumentals, soloists, modifierPresent, partMeta }
 //
-// partMeta[partIdx] = { prefix, voiceName } for classified parts; undefined for instrumentals.
+// soloists:  [{ part, displayName }]  — parts with [SOLO] prefix, in score order
+// partMeta[partIdx] = { prefix, voiceName } for all classified parts (SATB + SOLO);
+//                     undefined for pure instrumentals.
 function classifyScore(score) {
     var i, p;
     var slots = {}, modifierPresent = {};
     for (i = 0; i < SLOT_ORDER.length; i++) slots[SLOT_ORDER[i]] = [];
-    var instrumentals = [], partMeta = [];
+    var instrumentals = [], soloists = [], partMeta = [];
 
     for (p = 0; p < score.parts.length; p++) {
         var part = score.parts[p];
         var parsed = parseStaff(part.longName) ||
                      parseStaff(part.shortName) ||
                      parseStaff(part.partName);
-        if (!parsed) { instrumentals.push(part); continue; }
+        if (!parsed) {
+            // Not a recognised SATB part — check for [SOLO] prefix.
+            var soloMeta = _parseSolo(part.longName) ||
+                           _parseSolo(part.shortName) ||
+                           _parseSolo(part.partName);
+            if (soloMeta) {
+                partMeta[p] = soloMeta;
+                soloists.push({ part: part, displayName: soloMeta.voiceName });
+            } else {
+                instrumentals.push(part);
+            }
+            continue;
+        }
 
         partMeta[p] = parsed;
         var mapping = VOICE_MAP[parsed.prefix][parsed.voiceName.toLowerCase()];
@@ -165,13 +188,15 @@ function classifyScore(score) {
         }
     }
 
-    return { slots: slots, instrumentals: instrumentals,
+    return { slots: slots, instrumentals: instrumentals, soloists: soloists,
              modifierPresent: modifierPresent, partMeta: partMeta };
 }
 
-// buildTracks(slots, modifierPresent)
-// → [{ slotId, displayName, parts:[Part] }]  ordered by SLOT_ORDER, non-empty only
-function buildTracks(slots, modifierPresent) {
+// buildTracks(slots, modifierPresent, soloists)
+// → [{ slotId, displayName, parts:[Part], isSoloist? }]
+// SATB tracks first (ordered by SLOT_ORDER, non-empty only), then one track per soloist.
+// soloists = [{ part, displayName }] as returned by classifyScore (may be omitted / []).
+function buildTracks(slots, modifierPresent, soloists) {
     var i, sid;
 
     // Step 1: which slots emit a track?
@@ -215,19 +240,33 @@ function buildTracks(slots, modifierPresent) {
     else                                       { dn["B1"] = "Bass";   dn["B2"] = "Bass";   }
     dn["B1Bar"] = isDistinct("B1") ? "Bass 1 / Baritone" : "Bass / Baritone";
 
-    // Step 4: assemble result in canonical order
+    // Step 4: assemble SATB tracks in canonical order
     var result = [];
     for (i = 0; i < SLOT_ORDER.length; i++) {
         sid = SLOT_ORDER[i];
         if (!emit[sid]) continue;
         result.push({ slotId: sid, displayName: dn[sid], parts: slots[sid] });
     }
+
+    // Step 5: append one track per soloist
+    if (soloists) {
+        for (i = 0; i < soloists.length; i++) {
+            result.push({
+                slotId:      "SOLO_" + i,
+                displayName: soloists[i].displayName,
+                parts:       [soloists[i].part],
+                isSoloist:   true
+            });
+        }
+    }
+
     return result;
 }
 
-// buildPartFamilyMap(slots)
-// → [{ part, family:"upper"|"lower" }]  deduplicated, upper slots first
-function buildPartFamilyMap(slots) {
+// buildPartFamilyMap(slots, soloists)
+// → [{ part, family:"upper"|"lower"|"solo" }]  deduplicated, upper then lower then soloists
+// soloists = [{ part, displayName }] as returned by classifyScore (may be omitted / []).
+function buildPartFamilyMap(slots, soloists) {
     var result = [], seen = [], s, p;
     var upperSlots = ["S1","S2","S2Mz","A1Mz","A1","A2"];
     var lowerSlots = ["T1","T2","T2Bar","B1Bar","B1","B2"];
@@ -241,6 +280,11 @@ function buildPartFamilyMap(slots) {
         var lp = slots[lowerSlots[s]];
         for (p = 0; p < lp.length; p++) {
             if (!_partInArray(lp[p], seen)) { result.push({part:lp[p], family:"lower"}); seen.push(lp[p]); }
+        }
+    }
+    if (soloists) {
+        for (s = 0; s < soloists.length; s++) {
+            result.push({ part: soloists[s].part, family: "solo" });
         }
     }
     return result;
@@ -308,9 +352,11 @@ function saveChannelPrograms(score) {
 
 // applyChannelPrograms(score, track, upperProgram, lowerProgram)
 // Routes by slot family: S*/A* → upperProgram; T*/B* → lowerProgram.
+// No-op for soloist tracks (slotId starts with "SOLO_") — they have no voice instrument picker.
 // No-op for a given family if its program is null / undefined / -1.
 // Instrumental parts are never in track.parts so they are unaffected.
 function applyChannelPrograms(score, track, upperProgram, lowerProgram) {
+    if (track.slotId.indexOf("SOLO_") === 0) return;
     var program = UPPER_SLOT_IDS[track.slotId] ? upperProgram : lowerProgram;
     if (program === null || program === undefined || program < 0) return;
     for (var p = 0; p < track.parts.length; p++) {
@@ -349,15 +395,22 @@ function saveChannelVolumes(score) {
 }
 
 // applyBackgroundVoices(score, bgParts, upperBgVolume, lowerBgVolume,
-//                       upperBgProgram, lowerBgProgram)
-// bgParts = [{ part, family:"upper"|"lower" }]
+//                       upperBgProgram, lowerBgProgram,
+//                       soloistBgVolume, soloistBgProgram)
+// bgParts = [{ part, family:"upper"|"lower"|"solo" }]
+// Routes by family: upper → upper params, lower → lower params, solo → soloist params.
 // Sets channel.volume = bgVolume and, if bgProgram ≥ 0, channel.midiProgram = bgProgram.
 function applyBackgroundVoices(score, bgParts, upperBgVolume, lowerBgVolume,
-                                upperBgProgram, lowerBgProgram) {
+                                upperBgProgram, lowerBgProgram,
+                                soloistBgVolume, soloistBgProgram) {
     for (var p = 0; p < bgParts.length; p++) {
         var pf   = bgParts[p];
-        var vol  = pf.family === "upper" ? upperBgVolume  : lowerBgVolume;
-        var prg  = pf.family === "upper" ? upperBgProgram : lowerBgProgram;
+        var vol  = pf.family === "upper" ? upperBgVolume
+                 : pf.family === "lower" ? lowerBgVolume
+                 : soloistBgVolume;
+        var prg  = pf.family === "upper" ? upperBgProgram
+                 : pf.family === "lower" ? lowerBgProgram
+                 : soloistBgProgram;
         for (var i = 0; i < pf.part.instruments.length; i++) {
             for (var k = 0; k < pf.part.instruments[i].channels.length; k++) {
                 pf.part.instruments[i].channels[k].volume = vol;

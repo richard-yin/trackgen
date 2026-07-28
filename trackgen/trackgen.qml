@@ -6,14 +6,14 @@ import "voiceTypes.js" as VT
 MuseScore {
     //4.4 title:        "TrackGen"
     //4.4 description:  "Generate per-singer vocal learning tracks"
-    //4.4 version:      "1.0.0"
+    //4.4 version:      "1.1.0"
     //4.4 categoryCode: "composing-arranging-tools"
 
     Component.onCompleted: {
         if (mscoreMajorVersion === 4 && mscoreMinorVersion <= 3) {
             title        = "TrackGen"
             description  = "Generate per-singer vocal learning tracks"
-            version      = "1.0.0"
+            version      = "1.1.0"
             categoryCode = "composing-arranging-tools"
         }
     }
@@ -25,7 +25,7 @@ MuseScore {
     // ── Plugin state ──────────────────────────────────────────────────────────
     property var  classification: null
     property var  allTracks:      []
-    property var  allVocalParts:  []   // [{ part, family:"upper"|"lower" }]
+    property var  allVocalParts:  []   // [{ part, family:"upper"|"lower"|"solo" }]
     property var  exportQueue:    []   // subset of allTracks, built on Export
     property int  exportIdx:      0
     property var  muteSnap:       null
@@ -40,6 +40,8 @@ MuseScore {
     property int lowerBgVolume:     -1
     property int upperBgProgram:    -1
     property int lowerBgProgram:    -1
+    property int soloistBgVolume:   -1   // -1 = Off (mute)
+    property int soloistBgProgram:  -1
 
     readonly property var instrPrograms: [-1, 0, 40, 41, 42, 73, 68, 71]
     readonly property var instrNames:    ["Keep original","Piano","Violin","Viola",
@@ -75,7 +77,9 @@ MuseScore {
                 if (track.parts[j] === pf.part) { inTrack = true; break }
             }
             if (inTrack) continue
-            var vol = pf.family === "upper" ? upperBgVolume : lowerBgVolume
+            var vol = pf.family === "upper" ? upperBgVolume
+                    : pf.family === "lower" ? lowerBgVolume
+                    : soloistBgVolume
             if (vol > 0) result.push(pf)
         }
         return result
@@ -111,7 +115,8 @@ MuseScore {
         VT.applyChannelPrograms(curScore, track, upperVoiceProgram, lowerVoiceProgram)
         if (bgPf.length > 0) {
             VT.applyBackgroundVoices(curScore, bgPf,
-                upperBgVolume, lowerBgVolume, upperBgProgram, lowerBgProgram)
+                upperBgVolume, lowerBgVolume, upperBgProgram, lowerBgProgram,
+                soloistBgVolume, soloistBgProgram)
         }
         // Copy suggested filename to clipboard so the user can paste it in the dialog.
         // MS 4.7.1 regression: users must type the extension explicitly, so include .mp3.
@@ -146,8 +151,8 @@ MuseScore {
     onRun: {
         if (!curScore) { quit(); return }
         classification = VT.classifyScore(curScore)
-        allTracks      = VT.buildTracks(classification.slots, classification.modifierPresent)
-        allVocalParts  = VT.buildPartFamilyMap(classification.slots)
+        allTracks      = VT.buildTracks(classification.slots, classification.modifierPresent, classification.soloists)
+        allVocalParts  = VT.buildPartFamilyMap(classification.slots, classification.soloists)
         trackModel.clear()
         for (var i = 0; i < allTracks.length; i++) {
             trackModel.append({
@@ -251,6 +256,34 @@ MuseScore {
                         enabled: lowerBgVolume > 0
                         opacity: enabled ? 1.0 : 0.35
                         onCurrentIndexChanged: lowerBgProgram = instrPrograms[currentIndex]
+                    }
+                }
+
+                // Soloist background (only shown when [SOLO] parts exist)
+                Rectangle {
+                    visible: classification && classification.soloists &&
+                             classification.soloists.length > 0
+                    width: parent.width; height: 1; color: "#e0e0e0"
+                }
+                Row {
+                    visible: classification && classification.soloists &&
+                             classification.soloists.length > 0
+                    spacing: 0
+                    Label { width: 172; height: 30; text: "Soloist background:"
+                            verticalAlignment: Text.AlignVCenter }
+                    ComboBox {
+                        width: 150; height: 30; model: bgVolLabels
+                        onCurrentIndexChanged: soloistBgVolume = bgVolValues[currentIndex]
+                    }
+                    Item { width: 10; height: 1 }
+                    Label { width: 90; height: 30; text: "instrument"
+                            verticalAlignment: Text.AlignVCenter
+                            color: "#444444"; font.pixelSize: 12 }
+                    ComboBox {
+                        width: 165; height: 30; model: instrNames
+                        enabled: soloistBgVolume > 0
+                        opacity: enabled ? 1.0 : 0.35
+                        onCurrentIndexChanged: soloistBgProgram = instrPrograms[currentIndex]
                     }
                 }
             }

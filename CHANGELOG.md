@@ -2,6 +2,28 @@
 
 All notable changes to TrackGen are documented here.
 
+## [1.1.0] — 2026-07-28
+
+### Added
+
+**Soloist voice part support**
+- New `[SOLO] Voice Name` part prefix for vocal soloists that sit outside the SATB classification scheme (e.g. `[SOLO] Soprano I`, `[SOLO] Baritone`)
+- Each `[SOLO]` part generates its own export track (soloist + all instrumentals), appearing after the SATB tracks in the track list
+- When exporting SATB tracks, soloists can be kept as background voices with a dedicated **Soloist background** volume (Off / 25 % / 50 % / 75 %) and instrument selector, independent of the upper/lower family controls
+- When exporting a soloist's own track, SATB voices obey the existing upper/lower background settings
+- The Soloist background row in Screen 1 is hidden automatically when no `[SOLO]` parts are present in the score
+- `[SOLO]` parts continue to show their `[SOLO] VoiceName` label in track-list parentheticals
+
+### Changed
+
+- `classifyScore` return value gains a `soloists: [{ part, displayName }]` field
+- `buildTracks(slots, modifierPresent, soloists)` — new optional third parameter
+- `buildPartFamilyMap(slots, soloists)` — new optional second parameter; soloists added with `family: "solo"`
+- `applyBackgroundVoices` — two new trailing parameters: `soloistBgVolume`, `soloistBgProgram`
+- `applyChannelPrograms` — no-op for soloist tracks (no voice-instrument picker for `SOLO_*` slots)
+
+---
+
 ## [1.0.0] — 2026-07-28
 
 Initial release.
