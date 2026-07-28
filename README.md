@@ -61,6 +61,10 @@ Parts **without** a `[PREFIX]` are treated as **instrumental** and are always pr
 | `[SMATBB]` | Soprano · Mezzo-soprano · Alto · Tenor · Baritone · Bass |
 | `[SATBB]` | Soprano · Alto · Tenor · Baritone · Bass |
 | `[SSAATTBB]` | Soprano 1 · Soprano 2 · Alto 1 · Alto 2 · Tenor 1 · Tenor 2 · Bass 1 · Bass 2 |
+| `[SSAATBB]` | Soprano 1 · Soprano 2 · Alto 1 · Alto 2 · Tenor · Baritone · Bass |
+| `[SMATTBB]` | Soprano · Mezzo-soprano · Alto · Tenor 1 · Tenor 2 · Bass 1 · Bass 2 |
+| `[SATTBB]` | Soprano · Alto · Tenor 1 · Tenor 2 · Bass 1 · Bass 2 |
+| `[SSAATB]` | Soprano 1 · Soprano 2 · Alto 1 · Alto 2 · Tenor · Bass |
 
 Upper prefixes (`[SA]`, `[SMA]`, `[SSAA]`) and lower prefixes (`[TB]`, `[TBB]`, `[TTBB]`) are fully independent and can coexist with any combined prefix in the same score.
 
@@ -74,6 +78,10 @@ Name any soloist stave `[SOLO] <free-form name>` (e.g. `[SOLO] Soprano I`, `[SOL
 ### Multi-section scores
 
 When a score alternates between configurations (e.g. some sections in `[SATB]` and others in `[SSAATTBB]`), add **one staff per prefix per voice type**. Only one configuration's staves should contain notes in any given measure range; inactive staves should contain full-measure rests. The plugin plays the entire score for each track — resting staves contribute silence automatically.
+| `[SSAATBB]` | Soprano 1 · Soprano 2 · Alto 1 · Alto 2 · Tenor · Baritone · Bass |
+| `[SMATTBB]` | Soprano · Mezzo-soprano · Alto · Tenor 1 · Tenor 2 · Bass 1 · Bass 2 |
+| `[SATTBB]` | Soprano · Alto · Tenor 1 · Tenor 2 · Bass 1 · Bass 2 |
+| `[SSAATB]` | Soprano 1 · Soprano 2 · Alto 1 · Alto 2 · Tenor · Bass |
 
 ### Bracket groups
 

@@ -100,6 +100,40 @@ var VOICE_MAP = {
         "tenor 2":   ["T2","T2Bar"],
         "bass 1":    ["B1","B1Bar"],
         "bass 2":    ["B2"]
+    },
+    "SATTBB": {
+        "soprano":  ["S1","S2","S2Mz"],
+        "alto":     ["A1","A2","A1Mz"],
+        "tenor 1":  ["T1"],
+        "tenor 2":  ["T2","T2Bar"],
+        "bass 1":   ["B1","B1Bar"],
+        "bass 2":   ["B2"]
+    },
+    "SSAATB": {
+        "soprano 1": ["S1"],
+        "soprano 2": ["S2","S2Mz"],
+        "alto 1":    ["A1","A1Mz"],
+        "alto 2":    ["A2"],
+        "tenor":     ["T1","T2","T2Bar"],
+        "bass":      ["B1","B2","B1Bar"]
+    },
+    "SSAATBB": {
+        "soprano 1": ["S1"],
+        "soprano 2": ["S2","S2Mz"],
+        "alto 1":    ["A1","A1Mz"],
+        "alto 2":    ["A2"],
+        "tenor":     ["T1","T2"],
+        "baritone":  ["T2Bar","B1Bar"],
+        "bass":      ["B1","B2"]
+    },
+    "SMATTBB": {
+        "soprano":       ["S1","S2"],
+        "mezzo-soprano": ["S2Mz","A1Mz"],
+        "alto":          ["A1","A2"],
+        "tenor 1":       ["T1"],
+        "tenor 2":       ["T2","T2Bar"],
+        "bass 1":        ["B1","B1Bar"],
+        "bass 2":        ["B2"]
     }
 };
 

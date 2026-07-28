@@ -8,7 +8,7 @@
 Convert a vocal-instrumental MuseScore score into per-singer learning tracks (MP3), each containing that singer's voice parts plus all instrumental parts. Classification and muting are fully instrument-agnostic — driven solely by `longName` text prefixes.
 
 Three part categories are recognised:
-- **SATB-scheme parts** — `[PREFIX] Voice Name` where PREFIX is one of the 11 supported configuration tags. Mapped into canonical voice slots and combined across sections.
+- **SATB-scheme parts** — `[PREFIX] Voice Name` where PREFIX is one of the 15 supported configuration tags. Mapped into canonical voice slots and combined across sections.
 - **Soloist parts** — `[SOLO] Voice Name` (free-form name). Each soloist generates its own track and can appear as a background voice in SATB tracks.
 - **Instrumental parts** — no recognised prefix. Always present and unmuted in every track.
 
@@ -51,7 +51,7 @@ Staff `longName` encodes both category and voice role via a bracket prefix:
 [PREFIX] Voice Name
 ```
 
-**SATB-scheme prefix** — one of the 11 supported configuration tags — resolves all ambiguity about which singer tracks a stave feeds. Voice Name is the role within that configuration. The pair is looked up in a static table in `voiceTypes.js`.
+**SATB-scheme prefix** — one of the 15 supported configuration tags — resolves all ambiguity about which singer tracks a stave feeds. Voice Name is the role within that configuration. The pair is looked up in a static table in `voiceTypes.js`.
 
 **`[SOLO]` prefix** — marks a soloist part. Voice Name is free-form (e.g. `[SOLO] Soprano I`, `[SOLO] Cantor`). The voice name is used verbatim as the track display name. The `[SOLO]` prefix is matched case-insensitively; if the voice name is blank the display name defaults to "Soloist".
 
@@ -122,13 +122,43 @@ Track slots: `S1` `S2` `S2Mz` `A1Mz` `A1` `A2` `T1` `T2` `T2Bar` `B1Bar` `B1` `B
              Tenor 2          → T2, T2Bar
              Bass 1           → B1, B1Bar
              Bass 2           → B2
+
+[SATTBB]     Soprano          → S1, S2, S2Mz
+             Alto             → A1, A2, A1Mz
+             Tenor 1          → T1
+             Tenor 2          → T2, T2Bar
+             Bass 1           → B1, B1Bar
+             Bass 2           → B2
+
+[SSAATB]     Soprano 1        → S1
+             Soprano 2        → S2, S2Mz
+             Alto 1           → A1, A1Mz
+             Alto 2           → A2
+             Tenor            → T1, T2, T2Bar
+             Bass             → B1, B2, B1Bar
+
+[SSAATBB]    Soprano 1        → S1
+             Soprano 2        → S2, S2Mz
+             Alto 1           → A1, A1Mz
+             Alto 2           → A2
+             Tenor            → T1, T2
+             Baritone         → T2Bar, B1Bar    ← modifier
+             Bass             → B1, B2
+
+[SMATTBB]    Soprano          → S1, S2
+             Mezzo-soprano    → S2Mz, A1Mz      ← modifier
+             Alto             → A1, A2
+             Tenor 1          → T1
+             Tenor 2          → T2, T2Bar
+             Bass 1           → B1, B1Bar
+             Bass 2           → B2
 ```
 
 ### Key rules encoded in the table
 
 - **Unison staves in non-split configs** (`[SATB]` Soprano, `[SA]` Soprano, `[TB]` Tenor, etc.) include S2Mz / A1Mz / T2Bar / B1Bar — all singers of that family (including those who split off in other configs) sing together here
-- **Soprano/Alto in split upper configs** (`[SMA]`, `[SMATB]`, `[SMATBB]`) contribute to S1+S2 but NOT S2Mz / A1Mz — mezzo singers in those sections sing the Mezzo-soprano stave, not the Soprano/Alto stave
-- **Tenor/Bass in `[SMATBB]`** contribute to T1+T2 / B1+B2 but NOT T2Bar / B1Bar — baritone singers in those sections sing the Baritone stave
+- **Soprano/Alto in split upper configs** (`[SMA]`, `[SMATB]`, `[SMATBB]`, `[SMATTBB]`) contribute to S1+S2 but NOT S2Mz / A1Mz — mezzo singers in those sections sing the Mezzo-soprano stave, not the Soprano/Alto stave
+- **Tenor/Bass in baritone-split lower configs** (`[SMATBB]`, `[SATBB]`, `[SSAATBB]`, `[SATTBB]`) contribute to T1+T2 / B1+B2 but NOT T2Bar / B1Bar — baritone singers in those sections sing the Baritone stave
 - **Modifier staves** (Mezzo-soprano, Baritone) feed exactly two combined slots and never stand alone
 
 ---
@@ -453,6 +483,10 @@ Set each vocal part's **longName** (Part Properties → Part name) to `[PREFIX] 
 | `[TBB] Baritone` | Baritone modifier in a 3-part lower section |
 | `[TBB] Bass` | Bass in a 3-part lower section |
 | `[TTBB] Bass 1` | Bass 1 in a 4-part lower section (symmetric to `[SSAA] Alto 1`) |
+| `[SSAATBB] Soprano 2` | Soprano 2 in a 7-part section (SSAA upper + TBB lower) |
+| `[SSAATBB] Baritone` | Baritone modifier in a 7-part SSAATBB section |
+| `[SMATTBB] Mezzo-soprano` | Mezzo-soprano modifier in a 7-part section (SMA upper + TTBB lower) |
+| `[SMATTBB] Tenor 2` | Tenor 2 in a 7-part SMATTBB section |
 | `[SOLO] Soprano I` | Soloist — generates its own track, can be background in SATB tracks |
 | `[SOLO] Cantor` | Another soloist with a free-form name |
 

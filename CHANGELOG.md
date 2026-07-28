@@ -2,6 +2,19 @@
 
 All notable changes to TrackGen are documented here.
 
+## [1.2.1] — 2026-07-28
+
+### Added
+
+- Four new prefix configurations completing the full 3×3 upper/lower combination grid:
+  - `[SATTBB]` — SA upper + TTBB lower: Soprano · Alto · Tenor 1 · Tenor 2 · Bass 1 · Bass 2
+  - `[SSAATB]` — SSAA upper + TB lower: Soprano 1 · Soprano 2 · Alto 1 · Alto 2 · Tenor · Bass
+  - `[SSAATBB]` — SSAA upper + TBB lower: Soprano 1 · Soprano 2 · Alto 1 · Alto 2 · Tenor · Baritone · Bass
+  - `[SMATTBB]` — SMA upper + TTBB lower: Soprano · Mezzo-soprano · Alto · Tenor 1 · Tenor 2 · Bass 1 · Bass 2
+- Prefix count raised from 11 to 15
+
+---
+
 ## [1.2.0] — 2026-07-28
 
 ### Added
@@ -56,7 +69,7 @@ Initial release.
 ### Added
 
 **Core logic (`voiceTypes.js`)**
-- 11-prefix vocal configuration table: `[SA]`, `[SMA]`, `[SSAA]`, `[TB]`, `[TBB]`, `[TTBB]`, `[SATB]`, `[SMATB]`, `[SMATBB]`, `[SATBB]`, `[SSAATTBB]`
+- 11-prefix vocal configuration table (initial): `[SA]`, `[SMA]`, `[SSAA]`, `[TB]`, `[TBB]`, `[TTBB]`, `[SATB]`, `[SMATB]`, `[SMATBB]`, `[SATBB]`, `[SSAATTBB]`
 - `parseStaff` — extracts `[PREFIX] Voice Name` from a part's `longName`, with `shortName` / `partName` fallbacks
 - `classifyScore` — classifies all parts into 12 canonical slots (`S1 S2 S2Mz A1Mz A1 A2 T1 T2 T2Bar B1Bar B1 B2`) and an `instrumentals` list
 - `buildTracks` — applies the modifier-slot rule (S2Mz / A1Mz / T2Bar / B1Bar only emitted when a Mezzo-soprano or Baritone stave is present), deduplicates sibling pairs (S1/S2, A1/A2, T1/T2, B1/B2) whose part sets are identical, and computes qualified display names
