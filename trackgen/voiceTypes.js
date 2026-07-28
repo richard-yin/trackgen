@@ -150,6 +150,8 @@ var VOICE_MAP = {
 // MS4 after the March 2026 refactor ("measureNumberOffset", "excludeFromNumbering");
 // both are read with a || fallback.
 function buildMeasureMap(score) {
+    console.log("[TrackGen] buildMeasureMap: building map" +
+                (score.parts ? " for score with " + score.parts.length + " parts" : ""));
     var list = [];
     var m = score.firstMeasure;
     var seqNo = 1;
@@ -164,6 +166,9 @@ function buildMeasureMap(score) {
         list.push({ measure: m, displayNo: displayNo, tick: tick });
         m = m.nextMeasure;
     }
+    console.log("[TrackGen] buildMeasureMap: " + list.length + " measures, displayNo range " +
+                (list.length ? list[0].displayNo : "n/a") + "–" +
+                (list.length ? list[list.length - 1].displayNo : "n/a"));
     return list;
 }
 
@@ -171,11 +176,16 @@ function buildMeasureMap(score) {
 // → map[partIdx] = cumulative staff index offset
 // Requires part.nstaves (documented in Plugin API Part class).
 function buildStaffStartMap(score) {
+    console.log("[TrackGen] buildStaffStartMap: mapping " + score.parts.length + " parts");
     var map = [], offset = 0;
     for (var p = 0; p < score.parts.length; p++) {
         map[p] = offset;
-        offset += score.parts[p].nstaves || 1;
+        var ns = score.parts[p].nstaves || 1;
+        console.log("[TrackGen]   part[" + p + "] '" + (score.parts[p].longName || score.parts[p].partName || "") +
+                    "': staffStart=" + offset + ", nstaves=" + ns);
+        offset += ns;
     }
+    console.log("[TrackGen] buildStaffStartMap: total staves=" + offset);
     return map;
 }
 
@@ -185,16 +195,22 @@ function buildStaffStartMap(score) {
 // in the tick range [tickStart, tickEnd).
 // Uses a Cursor per staff to avoid relying on segment-level type constants.
 function partHasNotesInRange(score, staffStart, nStaves, tickStart, tickEnd) {
+    console.log("[TrackGen] partHasNotesInRange: staffStart=" + staffStart + " nStaves=" + nStaves +
+                " tick=[" + tickStart + "," + tickEnd + ")");
     var cursor = score.newCursor();
     cursor.filter = Segment.ChordRest;
     for (var si = staffStart; si < staffStart + nStaves; si++) {
         cursor.staffIdx = si;
         cursor.rewindToTick(tickStart);
         while (cursor.segment && cursor.tick < tickEnd) {
-            if (cursor.element && cursor.element.type !== Element.REST) return true;
+            if (cursor.element && cursor.element.type !== Element.REST) {
+                console.log("[TrackGen]   → found note at staff=" + si + " tick=" + cursor.tick);
+                return true;
+            }
             if (!cursor.next()) break;
         }
     }
+    console.log("[TrackGen]   → no notes found in range");
     return false;
 }
 
@@ -236,11 +252,19 @@ function getVoiceAbbrev(voiceName) {
 function parseStaff(name) {
     if (!name || name.length === 0) return null;
     var m = name.match(/^\[([A-Za-z]+)\]\s*(.*)/);
-    if (!m) return null;
+    if (!m) { console.log("[TrackGen] parseStaff: '" + name + "' → no bracket prefix"); return null; }
     var prefix = m[1].toUpperCase();
     var voiceName = m[2].trim();
-    if (!VOICE_MAP[prefix]) return null;
-    if (!VOICE_MAP[prefix][voiceName.toLowerCase()]) return null;
+    if (!VOICE_MAP[prefix]) {
+        console.log("[TrackGen] parseStaff: '" + name + "' → prefix [" + prefix + "] not in VOICE_MAP");
+        return null;
+    }
+    if (!VOICE_MAP[prefix][voiceName.toLowerCase()]) {
+        console.log("[TrackGen] parseStaff: '" + name + "' → voiceName '" + voiceName +
+                    "' not found under prefix [" + prefix + "]");
+        return null;
+    }
+    console.log("[TrackGen] parseStaff: '" + name + "' → prefix=" + prefix + " voiceName=" + voiceName);
     return { prefix: prefix, voiceName: voiceName };
 }
 
@@ -259,6 +283,8 @@ function classifyScore(score, tickStart, tickEnd, staffStartMap) {
     var useRange = (tickStart !== undefined && tickStart !== null &&
                    tickEnd   !== undefined && tickEnd   !== null &&
                    staffStartMap !== undefined && staffStartMap !== null);
+    console.log("[TrackGen] classifyScore: " + score.parts.length + " parts, useRange=" + useRange +
+                (useRange ? " tick=[" + tickStart + "," + tickEnd + ")" : ""));
     var i, p;
     var slots = {}, modifierPresent = {};
     for (i = 0; i < SLOT_ORDER.length; i++) slots[SLOT_ORDER[i]] = [];
@@ -266,6 +292,7 @@ function classifyScore(score, tickStart, tickEnd, staffStartMap) {
 
     for (p = 0; p < score.parts.length; p++) {
         var part = score.parts[p];
+        var partLabel = part.longName || part.shortName || part.partName || ("part[" + p + "]");
         var parsed = parseStaff(part.longName) ||
                      parseStaff(part.shortName) ||
                      parseStaff(part.partName);
@@ -278,11 +305,16 @@ function classifyScore(score, tickStart, tickEnd, staffStartMap) {
                 if (useRange) {
                     var ss = staffStartMap[p];
                     var ns = score.parts[p].nstaves || 1;
-                    if (!partHasNotesInRange(score, ss, ns, tickStart, tickEnd)) continue;
+                    if (!partHasNotesInRange(score, ss, ns, tickStart, tickEnd)) {
+                        console.log("[TrackGen]   part[" + p + "] '" + partLabel + "': SOLO, skipped (no notes in range)");
+                        continue;
+                    }
                 }
+                console.log("[TrackGen]   part[" + p + "] '" + partLabel + "': classified as SOLOIST '" + soloMeta.voiceName + "'");
                 partMeta[p] = soloMeta;
                 soloists.push({ part: part, displayName: soloMeta.voiceName });
             } else {
+                console.log("[TrackGen]   part[" + p + "] '" + partLabel + "': classified as INSTRUMENTAL");
                 instrumentals.push(part);
             }
             continue;
@@ -291,16 +323,29 @@ function classifyScore(score, tickStart, tickEnd, staffStartMap) {
         if (useRange) {
             var ss2 = staffStartMap[p];
             var ns2 = score.parts[p].nstaves || 1;
-            if (!partHasNotesInRange(score, ss2, ns2, tickStart, tickEnd)) continue;
+            if (!partHasNotesInRange(score, ss2, ns2, tickStart, tickEnd)) {
+                console.log("[TrackGen]   part[" + p + "] '" + partLabel + "': SATB, skipped (no notes in range)");
+                continue;
+            }
         }
 
         partMeta[p] = parsed;
         var mapping = VOICE_MAP[parsed.prefix][parsed.voiceName.toLowerCase()];
+        console.log("[TrackGen]   part[" + p + "] '" + partLabel + "': classified as [" +
+                    parsed.prefix + "] " + parsed.voiceName + " → slots " + mapping.join(","));
         for (i = 0; i < mapping.length; i++) slots[mapping[i]].push(part);
         if (MODIFIER_VOICE_NAMES[parsed.voiceName.toLowerCase()]) {
             for (i = 0; i < mapping.length; i++) modifierPresent[mapping[i]] = true;
         }
     }
+
+    var nonEmptySlots = [];
+    for (i = 0; i < SLOT_ORDER.length; i++) {
+        if (slots[SLOT_ORDER[i]].length > 0) nonEmptySlots.push(SLOT_ORDER[i]);
+    }
+    console.log("[TrackGen] classifyScore done: instrumentals=" + instrumentals.length +
+                " soloists=" + soloists.length +
+                " nonEmptySlots=[" + nonEmptySlots.join(",") + "]");
 
     return { slots: slots, instrumentals: instrumentals, soloists: soloists,
              modifierPresent: modifierPresent, partMeta: partMeta };
@@ -311,15 +356,24 @@ function classifyScore(score, tickStart, tickEnd, staffStartMap) {
 // SATB tracks first (ordered by SLOT_ORDER, non-empty only), then one track per soloist.
 // soloists = [{ part, displayName }] as returned by classifyScore (may be omitted / []).
 function buildTracks(slots, modifierPresent, soloists) {
+    console.log("[TrackGen] buildTracks: soloists=" + (soloists ? soloists.length : 0));
     var i, sid;
 
     // Step 1: which slots emit a track?
     var emit = {};
     for (i = 0; i < SLOT_ORDER.length; i++) {
         sid = SLOT_ORDER[i];
-        if (!slots[sid] || slots[sid].length === 0) { emit[sid] = false; continue; }
-        if (MODIFIER_SLOTS[sid] && !modifierPresent[sid])  { emit[sid] = false; continue; }
+        if (!slots[sid] || slots[sid].length === 0) {
+            emit[sid] = false;
+            continue;
+        }
+        if (MODIFIER_SLOTS[sid] && !modifierPresent[sid]) {
+            console.log("[TrackGen]   slot " + sid + ": suppressed (modifier slot, no modifier part)");
+            emit[sid] = false;
+            continue;
+        }
         emit[sid] = true;
+        console.log("[TrackGen]   slot " + sid + ": emit=true (" + slots[sid].length + " part(s))");
     }
 
     // Step 2: dedup sibling pairs — if S1/S2 (or A1/A2, T1/T2, B1/B2) contain
@@ -329,6 +383,7 @@ function buildTracks(slots, modifierPresent, soloists) {
     for (i = 0; i < PAIRS.length; i++) {
         var sn = PAIRS[i][0], jn = PAIRS[i][1];
         if (emit[sn] && emit[jn] && _samePartSets(slots[sn], slots[jn])) {
+            console.log("[TrackGen]   collapsing " + jn + " into " + sn + " (same part set)");
             collapsed[jn] = true;
             emit[jn] = false;
         }
@@ -359,12 +414,14 @@ function buildTracks(slots, modifierPresent, soloists) {
     for (i = 0; i < SLOT_ORDER.length; i++) {
         sid = SLOT_ORDER[i];
         if (!emit[sid]) continue;
+        console.log("[TrackGen]   track: slotId=" + sid + " displayName='" + dn[sid] + "'");
         result.push({ slotId: sid, displayName: dn[sid], parts: slots[sid] });
     }
 
     // Step 5: append one track per soloist
     if (soloists) {
         for (i = 0; i < soloists.length; i++) {
+            console.log("[TrackGen]   track: slotId=SOLO_" + i + " displayName='" + soloists[i].displayName + "'");
             result.push({
                 slotId:      "SOLO_" + i,
                 displayName: soloists[i].displayName,
@@ -374,6 +431,7 @@ function buildTracks(slots, modifierPresent, soloists) {
         }
     }
 
+    console.log("[TrackGen] buildTracks done: " + result.length + " track(s)");
     return result;
 }
 
@@ -381,26 +439,35 @@ function buildTracks(slots, modifierPresent, soloists) {
 // → [{ part, family:"upper"|"lower"|"solo" }]  deduplicated, upper then lower then soloists
 // soloists = [{ part, displayName }] as returned by classifyScore (may be omitted / []).
 function buildPartFamilyMap(slots, soloists) {
+    console.log("[TrackGen] buildPartFamilyMap: soloists=" + (soloists ? soloists.length : 0));
     var result = [], seen = [], s, p;
     var upperSlots = ["S1","S2","S2Mz","A1Mz","A1","A2"];
     var lowerSlots = ["T1","T2","T2Bar","B1Bar","B1","B2"];
     for (s = 0; s < upperSlots.length; s++) {
         var up = slots[upperSlots[s]];
         for (p = 0; p < up.length; p++) {
-            if (!_partInArray(up[p], seen)) { result.push({part:up[p], family:"upper"}); seen.push(up[p]); }
+            if (!_partInArray(up[p], seen)) {
+                console.log("[TrackGen]   '" + (up[p].longName || up[p].partName || "?") + "' → upper");
+                result.push({part:up[p], family:"upper"}); seen.push(up[p]);
+            }
         }
     }
     for (s = 0; s < lowerSlots.length; s++) {
         var lp = slots[lowerSlots[s]];
         for (p = 0; p < lp.length; p++) {
-            if (!_partInArray(lp[p], seen)) { result.push({part:lp[p], family:"lower"}); seen.push(lp[p]); }
+            if (!_partInArray(lp[p], seen)) {
+                console.log("[TrackGen]   '" + (lp[p].longName || lp[p].partName || "?") + "' → lower");
+                result.push({part:lp[p], family:"lower"}); seen.push(lp[p]);
+            }
         }
     }
     if (soloists) {
         for (s = 0; s < soloists.length; s++) {
+            console.log("[TrackGen]   '" + (soloists[s].part.longName || soloists[s].part.partName || "?") + "' → solo");
             result.push({ part: soloists[s].part, family: "solo" });
         }
     }
+    console.log("[TrackGen] buildPartFamilyMap done: " + result.length + " vocal part(s)");
     return result;
 }
 
@@ -409,6 +476,7 @@ function buildPartFamilyMap(slots, soloists) {
 // saveMuteStates(score)
 // → snapshot: [{ partIdx, instrIdx, chanIdx, wasMuted }]
 function saveMuteStates(score) {
+    console.log("[TrackGen] saveMuteStates: saving for " + score.parts.length + " parts");
     var snap = [];
     for (var p = 0; p < score.parts.length; p++) {
         var part = score.parts[p];
@@ -419,6 +487,7 @@ function saveMuteStates(score) {
             }
         }
     }
+    console.log("[TrackGen] saveMuteStates: snapshot has " + snap.length + " channel(s)");
     return snap;
 }
 
@@ -426,11 +495,18 @@ function saveMuteStates(score) {
 // Mutes every part except trackParts, bgParts, and instrumentalParts.
 // bgParts here is a plain array of Part objects (not {part,family} objects).
 function applyMutesForTrack(score, trackParts, bgParts, instrumentalParts) {
+    console.log("[TrackGen] applyMutesForTrack: trackParts=" + trackParts.length +
+                " bgParts=" + bgParts.length + " instrumentals=" + instrumentalParts.length);
     for (var p = 0; p < score.parts.length; p++) {
         var part = score.parts[p];
         var mute = !_partInArray(part, trackParts) &&
                    !_partInArray(part, bgParts) &&
                    !_partInArray(part, instrumentalParts);
+        var role = _partInArray(part, trackParts)      ? "TRACK"        :
+                   _partInArray(part, bgParts)          ? "BACKGROUND"   :
+                   _partInArray(part, instrumentalParts)? "INSTRUMENTAL"  : "MUTED";
+        console.log("[TrackGen]   part[" + p + "] '" +
+                    (part.longName || part.partName || "?") + "': " + role);
         for (var i = 0; i < part.instruments.length; i++) {
             for (var k = 0; k < part.instruments[i].channels.length; k++) {
                 part.instruments[i].channels[k].mute = mute;
@@ -440,6 +516,7 @@ function applyMutesForTrack(score, trackParts, bgParts, instrumentalParts) {
 }
 
 function restoreMuteStates(score, snapshot) {
+    console.log("[TrackGen] restoreMuteStates: restoring " + snapshot.length + " channel(s)");
     for (var s = 0; s < snapshot.length; s++) {
         var e = snapshot[s];
         score.parts[e.partIdx].instruments[e.instrIdx].channels[e.chanIdx].mute = e.wasMuted;
@@ -451,6 +528,7 @@ function restoreMuteStates(score, snapshot) {
 // saveChannelPrograms(score)
 // → snapshot: [{ partIdx, instrIdx, chanIdx, program }]
 function saveChannelPrograms(score) {
+    console.log("[TrackGen] saveChannelPrograms: saving for " + score.parts.length + " parts");
     var snap = [];
     for (var p = 0; p < score.parts.length; p++) {
         var part = score.parts[p];
@@ -461,6 +539,7 @@ function saveChannelPrograms(score) {
             }
         }
     }
+    console.log("[TrackGen] saveChannelPrograms: snapshot has " + snap.length + " channel(s)");
     return snap;
 }
 
@@ -470,9 +549,18 @@ function saveChannelPrograms(score) {
 // No-op for a given family if its program is null / undefined / -1.
 // Instrumental parts are never in track.parts so they are unaffected.
 function applyChannelPrograms(score, track, upperProgram, lowerProgram) {
-    if (track.slotId.indexOf("SOLO_") === 0) return;
-    var program = UPPER_SLOT_IDS[track.slotId] ? upperProgram : lowerProgram;
-    if (program === null || program === undefined || program < 0) return;
+    if (track.slotId.indexOf("SOLO_") === 0) {
+        console.log("[TrackGen] applyChannelPrograms: skipped for soloist track " + track.slotId);
+        return;
+    }
+    var isUpper  = !!UPPER_SLOT_IDS[track.slotId];
+    var program  = isUpper ? upperProgram : lowerProgram;
+    console.log("[TrackGen] applyChannelPrograms: track=" + track.slotId +
+                " family=" + (isUpper ? "upper" : "lower") + " program=" + program);
+    if (program === null || program === undefined || program < 0) {
+        console.log("[TrackGen]   program not set, skipping");
+        return;
+    }
     for (var p = 0; p < track.parts.length; p++) {
         var part = track.parts[p];
         for (var i = 0; i < part.instruments.length; i++) {
@@ -484,6 +572,7 @@ function applyChannelPrograms(score, track, upperProgram, lowerProgram) {
 }
 
 function restoreChannelPrograms(score, snapshot) {
+    console.log("[TrackGen] restoreChannelPrograms: restoring " + snapshot.length + " channel(s)");
     for (var s = 0; s < snapshot.length; s++) {
         var e = snapshot[s];
         score.parts[e.partIdx].instruments[e.instrIdx].channels[e.chanIdx].midiProgram = e.program;
@@ -495,6 +584,7 @@ function restoreChannelPrograms(score, snapshot) {
 // saveChannelVolumes(score)
 // → snapshot: [{ partIdx, instrIdx, chanIdx, volume }]
 function saveChannelVolumes(score) {
+    console.log("[TrackGen] saveChannelVolumes: saving for " + score.parts.length + " parts");
     var snap = [];
     for (var p = 0; p < score.parts.length; p++) {
         var part = score.parts[p];
@@ -505,6 +595,7 @@ function saveChannelVolumes(score) {
             }
         }
     }
+    console.log("[TrackGen] saveChannelVolumes: snapshot has " + snap.length + " channel(s)");
     return snap;
 }
 
@@ -517,6 +608,9 @@ function saveChannelVolumes(score) {
 function applyBackgroundVoices(score, bgParts, upperBgVolume, lowerBgVolume,
                                 upperBgProgram, lowerBgProgram,
                                 soloistBgVolume, soloistBgProgram) {
+    console.log("[TrackGen] applyBackgroundVoices: " + bgParts.length + " bg part(s)" +
+                " upperVol=" + upperBgVolume + " lowerVol=" + lowerBgVolume +
+                " soloistVol=" + soloistBgVolume);
     for (var p = 0; p < bgParts.length; p++) {
         var pf   = bgParts[p];
         var vol  = pf.family === "upper" ? upperBgVolume
@@ -525,6 +619,8 @@ function applyBackgroundVoices(score, bgParts, upperBgVolume, lowerBgVolume,
         var prg  = pf.family === "upper" ? upperBgProgram
                  : pf.family === "lower" ? lowerBgProgram
                  : soloistBgProgram;
+        console.log("[TrackGen]   '" + (pf.part.longName || pf.part.partName || "?") +
+                    "' family=" + pf.family + " vol=" + vol + " program=" + prg);
         for (var i = 0; i < pf.part.instruments.length; i++) {
             for (var k = 0; k < pf.part.instruments[i].channels.length; k++) {
                 pf.part.instruments[i].channels[k].volume = vol;
@@ -537,6 +633,7 @@ function applyBackgroundVoices(score, bgParts, upperBgVolume, lowerBgVolume,
 }
 
 function restoreChannelVolumes(score, snapshot) {
+    console.log("[TrackGen] restoreChannelVolumes: restoring " + snapshot.length + " channel(s)");
     for (var s = 0; s < snapshot.length; s++) {
         var e = snapshot[s];
         score.parts[e.partIdx].instruments[e.instrIdx].channels[e.chanIdx].volume = e.volume;

@@ -1,19 +1,20 @@
 import QtQuick 2.9
 import QtQuick.Controls 2.2
 import MuseScore 3.0
+import FileIO 3.0
 import "voiceTypes.js" as VT
 
 MuseScore {
     //4.4 title:        "TrackGen"
     //4.4 description:  "Generate per-singer vocal learning tracks"
-    //4.4 version:      "1.0.1"
+    //4.4 version:      "1.0.2"
     //4.4 categoryCode: "composing-arranging-tools"
 
     Component.onCompleted: {
         if (mscoreMajorVersion === 4 && mscoreMinorVersion <= 3) {
             title        = "TrackGen"
             description  = "Generate per-singer vocal learning tracks"
-            version      = "1.0.1"
+            version      = "1.0.2"
             categoryCode = "composing-arranging-tools"
         }
     }
@@ -63,12 +64,38 @@ MuseScore {
     readonly property var bgVolValues:   [-1, 32, 64, 96]
     readonly property var bgVolLabels:   ["Off","25%","50%","75%"]
 
+    // ── File logging ──────────────────────────────────────────────────────────
+    property string _logBuf: ""
+
+    FileIO {
+        id: logFile
+        onError: console.log("[TrackGen] FileIO error: " + msg)
+    }
+
+    // Dual-output log: console.log (visible with -d flag) + buffered file log.
+    // voiceTypes.js logs go to console.log only (pragma library cannot use FileIO).
+    function dbg(msg) {
+        console.log(msg)
+        _logBuf += msg + "\n"
+    }
+
+    // Append the current buffer to trackgen.log and clear it.
+    // Called at the end of each major operation so the file stays up to date
+    // even if MuseScore crashes mid-export.
+    function _flushLog() {
+        if (_logBuf.length === 0 || logFile.source.length === 0) return
+        var prev = logFile.read()
+        logFile.write((prev || "") + _logBuf)
+        _logBuf = ""
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     // Returns { tickStart, tickEnd } for the given display-number range.
     // tickEnd is the tick of the measure AFTER m2 (exclusive), or a value
     // past the last segment when m2 is the last measure.
     function tickRangeForDisplayRange(m1, m2) {
+        dbg("[TrackGen] tickRangeForDisplayRange: m1=" + m1 + " m2=" + m2)
         var tickStart = -1, tickEnd = -1
         for (var i = 0; i < measureMap.length; i++) {
             if (tickStart < 0 && measureMap[i].displayNo >= m1 && measureMap[i].displayNo > 0)
@@ -84,6 +111,7 @@ MuseScore {
             var ls = curScore.lastSegment
             tickEnd = ls ? ls.tick + 1 : 2147483647
         }
+        dbg("[TrackGen] tickRangeForDisplayRange: tickStart=" + tickStart + " tickEnd=" + tickEnd)
         return { tickStart: tickStart, tickEnd: tickEnd }
     }
 
@@ -92,7 +120,13 @@ MuseScore {
     // Returns null when the range spans the full score.
     // Uses cursor.time which integrates the full tempo map internally.
     function computeTrimSeconds() {
-        if (measureStart <= firstMeasureNo && measureEnd >= lastMeasureNo) return null
+        dbg("[TrackGen] computeTrimSeconds: measureStart=" + measureStart +
+                    " measureEnd=" + measureEnd +
+                    " firstMeasureNo=" + firstMeasureNo + " lastMeasureNo=" + lastMeasureNo)
+        if (measureStart <= firstMeasureNo && measureEnd >= lastMeasureNo) {
+            dbg("[TrackGen] computeTrimSeconds: full score range, no trim needed")
+            return null
+        }
         var tr  = tickRangeForDisplayRange(measureStart, measureEnd)
         var cur = curScore.newCursor()
         var ss  = null, to = null
@@ -104,6 +138,7 @@ MuseScore {
             cur.rewindToTick(tr.tickEnd)
             to = cur.time.toFixed(3)
         }
+        dbg("[TrackGen] computeTrimSeconds: ss=" + ss + " to=" + to)
         return { ss: ss, to: to }
     }
 
@@ -142,12 +177,16 @@ MuseScore {
     // Writes text to a local file via XMLHttpRequest PUT.
     // Returns true on success (Qt local PUT reports status 0).
     function writeFile(path, content) {
+        dbg("[TrackGen] writeFile: path=" + path + " length=" + content.length)
         try {
             var xhr = new XMLHttpRequest()
             xhr.open("PUT", "file:///" + path.replace(/\\/g, "/"), false)
             xhr.send(content)
-            return (xhr.status === 0 || xhr.status === 200 || xhr.status === 201)
+            var ok = (xhr.status === 0 || xhr.status === 200 || xhr.status === 201)
+            dbg("[TrackGen] writeFile: status=" + xhr.status + " ok=" + ok)
+            return ok
         } catch (e) {
+            dbg("[TrackGen] writeFile: error: " + e)
             return false
         }
     }
@@ -156,6 +195,8 @@ MuseScore {
     // the measure range changes.
     function reclassify() {
         var isFullRange = (measureStart <= firstMeasureNo && measureEnd >= lastMeasureNo)
+        dbg("[TrackGen] reclassify: measures " + measureStart + "–" + measureEnd +
+                    " fullRange=" + isFullRange)
         if (isFullRange) {
             classification = VT.classifyScore(curScore)
         } else {
@@ -178,6 +219,9 @@ MuseScore {
                 trackIdx:     i
             })
         }
+        dbg("[TrackGen] reclassify done: " + allTracks.length + " track(s) in model" +
+                    " (incl. Accompaniment), " + allVocalParts.length + " vocal part(s)")
+        _flushLog()
     }
 
     function computeParenthetical(track) {
@@ -223,12 +267,20 @@ MuseScore {
     }
 
     function startExport() {
+        dbg("[TrackGen] startExport: building export queue from " + trackModel.count + " rows")
         var q = []
         for (var i = 0; i < trackModel.count; i++) {
             var row = trackModel.get(i)
             if (row.trackChecked) q.push(allTracks[row.trackIdx])
         }
-        if (q.length === 0) return
+        if (q.length === 0) {
+            dbg("[TrackGen] startExport: no tracks selected, aborting")
+            return
+        }
+        dbg("[TrackGen] startExport: " + q.length + " track(s) queued")
+        for (var j = 0; j < q.length; j++) {
+            dbg("[TrackGen]   [" + j + "] " + q[j].displayName + " (slotId=" + q[j].slotId + ")")
+        }
         exportQueue = q
         exportIdx   = 0
         muteSnap    = VT.saveMuteStates(curScore)
@@ -243,18 +295,25 @@ MuseScore {
         var trim = computeTrimSeconds()
         if (trim) {
             trimInfo = trim
+            dbg("[TrackGen] startExport: trim range ss=" + trim.ss + " to=" + trim.to)
             var scripts = generateScripts(trim)
             var dir = curScore.path.substring(0, curScore.path.lastIndexOf("/"))
             trimExportDir = dir
+            dbg("[TrackGen] startExport: writing trim scripts to " + dir)
             var okSh  = writeFile(dir + "/trim_tracks.sh",  scripts.sh)
             var okBat = writeFile(dir + "/trim_tracks.bat", scripts.bat)
             trimScriptWritten = okSh || okBat
+            dbg("[TrackGen] startExport: trimScriptWritten=" + trimScriptWritten +
+                        " (sh=" + okSh + " bat=" + okBat + ")")
             if (!trimScriptWritten)
                 trimFallbackText = scripts.sh
                     + "\n\n--- Windows (trim_tracks.bat) ---\n\n"
                     + scripts.bat
+        } else {
+            dbg("[TrackGen] startExport: full score range, no trim scripts")
         }
 
+        _flushLog()
         screen = 2
         doExportTrack(0)
     }
@@ -262,7 +321,12 @@ MuseScore {
     function doExportTrack(idx) {
         var track    = exportQueue[idx]
         var isAccomp = (track.slotId === "ACCOMP")
+        dbg("[TrackGen] doExportTrack: idx=" + idx + "/" + exportQueue.length +
+                    " track='" + track.displayName + "' slotId=" + track.slotId +
+                    " isAccomp=" + isAccomp)
         var bgPf     = isAccomp ? [] : computeBgParts(track)
+        dbg("[TrackGen]   bgParts=" + bgPf.length +
+                    " instrumentals=" + classification.instrumentals.length)
         VT.applyMutesForTrack(curScore, track.parts, flatParts(bgPf), classification.instrumentals)
         if (!isAccomp) {
             VT.applyChannelPrograms(curScore, track, upperVoiceProgram, lowerVoiceProgram)
@@ -274,25 +338,40 @@ MuseScore {
         }
         // Copy suggested filename to clipboard so the user can paste it in the dialog.
         // MS 4.7.1 regression: users must type the extension explicitly, so include .mp3.
-        clipHelper.text = track.displayName + ".mp3"
+        var filename = track.displayName + ".mp3"
+        dbg("[TrackGen]   copying filename to clipboard: " + filename)
+        clipHelper.text = filename
         clipHelper.selectAll()
         clipHelper.copy()
+        dbg("[TrackGen]   calling cmd('export-audio')")
+        _flushLog()
         cmd("export-audio")
     }
 
     function advanceTrack() {
+        dbg("[TrackGen] advanceTrack: restoring state after track " + exportIdx)
         VT.restoreMuteStates(curScore, muteSnap)
         VT.restoreChannelPrograms(curScore, progSnap)
         VT.restoreChannelVolumes(curScore, volSnap)
         exportIdx = exportIdx + 1
-        if (exportIdx >= exportQueue.length) { screen = 3; return }
+        dbg("[TrackGen] advanceTrack: exportIdx now=" + exportIdx +
+                    " queueLength=" + exportQueue.length)
+        if (exportIdx >= exportQueue.length) {
+            dbg("[TrackGen] advanceTrack: all tracks done, switching to screen 3")
+            _flushLog()
+            screen = 3
+            return
+        }
         doExportTrack(exportIdx)
     }
 
     function stopAndRestore() {
+        dbg("[TrackGen] stopAndRestore: restoring state and quitting" +
+                    " (exportIdx=" + exportIdx + ")")
         if (muteSnap) VT.restoreMuteStates(curScore, muteSnap)
         if (progSnap) VT.restoreChannelPrograms(curScore, progSnap)
         if (volSnap)  VT.restoreChannelVolumes(curScore, volSnap)
+        _flushLog()
         quit()
     }
 
@@ -307,7 +386,19 @@ MuseScore {
 
     // ── Initialisation ────────────────────────────────────────────────────────
     onRun: {
-        if (!curScore) { quit(); return }
+        if (!curScore) {
+            console.log("[TrackGen] onRun: no score open, quitting")
+            quit()
+            return
+        }
+
+        // Point the log file at the score's directory and start fresh.
+        var scoreDir = curScore.path.substring(0, curScore.path.lastIndexOf("/"))
+        logFile.source = scoreDir + "/trackgen.log"
+        logFile.write("")   // truncate / create
+
+        dbg("[TrackGen] onRun: score='" + curScore.title + "'" +
+                    " path='" + curScore.path + "'")
 
         // Build measure map and staff-start map once.
         measureMap    = VT.buildMeasureMap(curScore)
@@ -323,6 +414,8 @@ MuseScore {
         }
         firstMeasureNo = fNo
         lastMeasureNo  = lNo
+        dbg("[TrackGen] onRun: measure range " + fNo + "–" + lNo +
+                    " (" + measureMap.length + " entries in map)")
         // Setting measureStart/measureEnd triggers onMeasure*Changed, but curScore
         // isn't set in the property-change guard yet — call reclassify() explicitly.
         measureStart = fNo

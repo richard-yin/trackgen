@@ -2,6 +2,19 @@
 
 All notable changes to TrackGen are documented here.
 
+## [1.0.2] — 2026-07-28
+
+### Added
+
+**Debug logging**
+- `voiceTypes.js`: `console.log` statements throughout all public functions — entry/exit, per-part classification decisions (SATB slot mapping, soloist, instrumental, range-skipped), slot emit/suppress/collapse decisions in `buildTracks`, mute/program/volume snapshot sizes, per-part role during mute application (TRACK / BACKGROUND / INSTRUMENTAL / MUTED), background voice family/volume/program
+- `trackgen.qml`: dual-output logging via a `dbg()` helper that writes to both `console.log` (visible when MuseScore is launched with `-d`) and a buffered `FileIO 3.0` file log
+- Log file `trackgen.log` is created/truncated on each plugin launch and flushed incrementally after each major operation (`reclassify`, `startExport`, each `doExportTrack`, `advanceTrack`, `stopAndRestore`), so the file stays current even if MuseScore crashes mid-export
+- `voiceTypes.js` logs remain `console.log`-only (`.pragma library` files cannot import QML types such as `FileIO`)
+- All log lines prefixed `[TrackGen]` for easy filtering in the terminal
+
+---
+
 ## [1.0.1] — 2026-07-28
 
 ### Added
