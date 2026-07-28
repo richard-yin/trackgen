@@ -2,6 +2,8 @@
 
 A MuseScore 4 plugin that converts a vocal-instrumental score into per-singer learning tracks (MP3). Each exported track contains that singer's voice parts plus all instrumental parts. Classification is driven entirely by a `[PREFIX]` in each part's long name — no instrument IDs or MIDI programs are read.
 
+Three part categories are recognised: **SATB-scheme parts** (`[PREFIX] Voice Name`), **soloists** (`[SOLO] Voice Name`), and **instrumentals** (no prefix, always present in every track).
+
 ## Requirements
 
 - MuseScore 4.4 or later (Qt 6)
@@ -39,6 +41,8 @@ Set each vocal part's **Part name** (`longName`) to `[PREFIX] Voice Name` using 
 | `[TTBB] Bass 2` | Bass 2 in a 4-part lower section |
 | `[TB] Tenor` | Tenor in a simple 2-part lower section |
 | `[SA] Soprano` | Soprano in a simple 2-part upper section |
+| `[SOLO] Soprano I` | Soloist — gets its own track; free-form name |
+| `[SOLO] Cantor` | Another soloist with a different name |
 
 Parts **without** a `[PREFIX]` are treated as **instrumental** and are always present in every track. Piano accompaniments, strings, etc. require no changes.
 
@@ -60,6 +64,13 @@ Parts **without** a `[PREFIX]` are treated as **instrumental** and are always pr
 
 Upper prefixes (`[SA]`, `[SMA]`, `[SSAA]`) and lower prefixes (`[TB]`, `[TBB]`, `[TTBB]`) are fully independent and can coexist with any combined prefix in the same score.
 
+### Soloist parts
+
+Name any soloist stave `[SOLO] <free-form name>` (e.g. `[SOLO] Soprano I`, `[SOLO] Cantor`). TrackGen will:
+
+- Generate a dedicated track for each soloist (appended after SATB tracks).
+- Include all soloists as optional **background voices** in every other track, controlled by the **Soloist background** settings on Screen 1.
+
 ### Multi-section scores
 
 When a score alternates between configurations (e.g. some sections in `[SATB]` and others in `[SSAATTBB]`), add **one staff per prefix per voice type**. Only one configuration's staves should contain notes in any given measure range; inactive staves should contain full-measure rests. The plugin plays the entire score for each track — resting staves contribute silence automatically.
@@ -80,6 +91,8 @@ The plugin scans all parts and displays the tracks it will generate.
 - **Voice instrument** — optionally replace the playback sound for target voices (upper or lower family).
 - **Background volume** — set to 25 %, 50 %, or 75 % to have non-target voices play quietly in the background instead of being silenced. Defaults to Off (fully muted).
 - **Background instrument** — optionally override the background voices' sound (only active when background volume is not Off).
+- **Soloist background** — (appears only when `[SOLO]` parts are present) independently controls the background volume and instrument for soloist parts when they are not the current track.
+- **Measure range** (From / To) — restrict classification to a specific measure range. Only parts with at least one non-rest note in that range are treated as active. Displayed numbers match the MuseScore UI; changing the range immediately refreshes the track list. Defaults to the full score.
 - **Track checkboxes** — uncheck any tracks you want to skip.
 - **Export All →** — proceeds to Screen 2.
 
@@ -107,6 +120,8 @@ Tracks are generated per singer type, not per stave. The plugin:
 - Combines staves from multiple prefixes when they serve the same voice type across sections.
 - Collapses sibling tracks (e.g. Soprano 1 / Soprano 2) into a single unqualified track when both slots contain exactly the same staves.
 - Emits combined tracks (Soprano 2 / Mezzo-soprano, Alto 1 / Mezzo-soprano, Tenor 2 / Baritone, Bass 1 / Baritone) only when the corresponding modifier stave (Mezzo-soprano or Baritone) is actually present in the score.
+- Generates one additional track per `[SOLO]` part, appended after all SATB tracks. Soloist track names come directly from the free-form voice name in the long name.
+- Always appends an **Accompaniment** track that mutes all voice parts and exports only the instrumental parts.
 
 ## Known limitations
 

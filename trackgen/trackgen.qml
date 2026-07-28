@@ -6,14 +6,14 @@ import "voiceTypes.js" as VT
 MuseScore {
     //4.4 title:        "TrackGen"
     //4.4 description:  "Generate per-singer vocal learning tracks"
-    //4.4 version:      "1.1.0"
+    //4.4 version:      "1.2.0"
     //4.4 categoryCode: "composing-arranging-tools"
 
     Component.onCompleted: {
         if (mscoreMajorVersion === 4 && mscoreMinorVersion <= 3) {
             title        = "TrackGen"
             description  = "Generate per-singer vocal learning tracks"
-            version      = "1.1.0"
+            version      = "1.2.0"
             categoryCode = "composing-arranging-tools"
         }
     }
@@ -33,6 +33,14 @@ MuseScore {
     property var  volSnap:        null
     property int  screen:         1    // 1 = setup  2 = export  3 = done
 
+    // Measure map and range
+    property var  measureMap:      []   // [{ measure, displayNo, tick }] built in onRun
+    property var  staffStartMap:   null // map[partIdx] = cumulative staff offset
+    property int  firstMeasureNo:  1    // lowest non-zero displayNo in measureMap
+    property int  lastMeasureNo:   1    // highest displayNo in measureMap
+    property int  measureStart:    1    // user-selected From measure (display number)
+    property int  measureEnd:      1    // user-selected To measure (display number)
+
     // ── Settings ──────────────────────────────────────────────────────────────
     property int upperVoiceProgram: -1   // -1 = keep original
     property int lowerVoiceProgram: -1
@@ -51,7 +59,58 @@ MuseScore {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    // Returns { tickStart, tickEnd } for the given display-number range.
+    // tickEnd is the tick of the measure AFTER m2 (exclusive), or a value
+    // past the last segment when m2 is the last measure.
+    function tickRangeForDisplayRange(m1, m2) {
+        var tickStart = -1, tickEnd = -1
+        for (var i = 0; i < measureMap.length; i++) {
+            if (tickStart < 0 && measureMap[i].displayNo >= m1 && measureMap[i].displayNo > 0)
+                tickStart = measureMap[i].tick
+            if (measureMap[i].displayNo > m2 && measureMap[i].displayNo > 0) {
+                tickEnd = measureMap[i].tick
+                break
+            }
+        }
+        if (tickStart < 0) tickStart = 0
+        if (tickEnd < 0) {
+            // m2 is the last measure — use last segment tick + 1
+            var ls = curScore.lastSegment
+            tickEnd = ls ? ls.tick + 1 : 2147483647
+        }
+        return { tickStart: tickStart, tickEnd: tickEnd }
+    }
+
+    // Core classification + track-list rebuild. Called on init and whenever
+    // the measure range changes.
+    function reclassify() {
+        var isFullRange = (measureStart <= firstMeasureNo && measureEnd >= lastMeasureNo)
+        if (isFullRange) {
+            classification = VT.classifyScore(curScore)
+        } else {
+            var tr = tickRangeForDisplayRange(measureStart, measureEnd)
+            classification = VT.classifyScore(curScore, tr.tickStart, tr.tickEnd, staffStartMap)
+        }
+        allTracks     = VT.buildTracks(classification.slots, classification.modifierPresent,
+                                       classification.soloists)
+        // Append the accompaniment-only pseudo-track.
+        allTracks = allTracks.concat([{
+            slotId: "ACCOMP", displayName: "Accompaniment", parts: [], isAccomp: true
+        }])
+        allVocalParts = VT.buildPartFamilyMap(classification.slots, classification.soloists)
+        trackModel.clear()
+        for (var i = 0; i < allTracks.length; i++) {
+            trackModel.append({
+                trackName:    allTracks[i].displayName,
+                paren:        computeParenthetical(allTracks[i]),
+                trackChecked: true,
+                trackIdx:     i
+            })
+        }
+    }
+
     function computeParenthetical(track) {
+        if (track.slotId === "ACCOMP") return "(instrumental parts only)"
         if (!classification || !curScore) return ""
         var labels = []
         for (var i = 0; i < track.parts.length; i++) {
@@ -109,11 +168,14 @@ MuseScore {
     }
 
     function doExportTrack(idx) {
-        var track  = exportQueue[idx]
-        var bgPf   = computeBgParts(track)
+        var track    = exportQueue[idx]
+        var isAccomp = (track.slotId === "ACCOMP")
+        var bgPf     = isAccomp ? [] : computeBgParts(track)
         VT.applyMutesForTrack(curScore, track.parts, flatParts(bgPf), classification.instrumentals)
-        VT.applyChannelPrograms(curScore, track, upperVoiceProgram, lowerVoiceProgram)
-        if (bgPf.length > 0) {
+        if (!isAccomp) {
+            VT.applyChannelPrograms(curScore, track, upperVoiceProgram, lowerVoiceProgram)
+        }
+        if (!isAccomp && bgPf.length > 0) {
             VT.applyBackgroundVoices(curScore, bgPf,
                 upperBgVolume, lowerBgVolume, upperBgProgram, lowerBgProgram,
                 soloistBgVolume, soloistBgProgram)
@@ -147,21 +209,33 @@ MuseScore {
     // Hidden TextEdit for clipboard access
     TextEdit { id: clipHelper; visible: false; width: 1; height: 1 }
 
+    // Reclassify when the user changes the measure range.
+    onMeasureStartChanged: { if (curScore && measureStart <= measureEnd) reclassify() }
+    onMeasureEndChanged:   { if (curScore && measureStart <= measureEnd) reclassify() }
+
     // ── Initialisation ────────────────────────────────────────────────────────
     onRun: {
         if (!curScore) { quit(); return }
-        classification = VT.classifyScore(curScore)
-        allTracks      = VT.buildTracks(classification.slots, classification.modifierPresent, classification.soloists)
-        allVocalParts  = VT.buildPartFamilyMap(classification.slots, classification.soloists)
-        trackModel.clear()
-        for (var i = 0; i < allTracks.length; i++) {
-            trackModel.append({
-                trackName:    allTracks[i].displayName,
-                paren:        computeParenthetical(allTracks[i]),
-                trackChecked: true,
-                trackIdx:     i
-            })
+
+        // Build measure map and staff-start map once.
+        measureMap    = VT.buildMeasureMap(curScore)
+        staffStartMap = VT.buildStaffStartMap(curScore)
+
+        // Find the lowest and highest non-zero (non-excluded) display numbers.
+        var fNo = 1, lNo = 1
+        for (var i = 0; i < measureMap.length; i++) {
+            if (measureMap[i].displayNo > 0) { fNo = measureMap[i].displayNo; break }
         }
+        for (var j = measureMap.length - 1; j >= 0; j--) {
+            if (measureMap[j].displayNo > 0) { lNo = measureMap[j].displayNo; break }
+        }
+        firstMeasureNo = fNo
+        lastMeasureNo  = lNo
+        // Setting measureStart/measureEnd triggers onMeasure*Changed, but curScore
+        // isn't set in the property-change guard yet — call reclassify() explicitly.
+        measureStart = fNo
+        measureEnd   = lNo
+        reclassify()
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -286,6 +360,42 @@ MuseScore {
                         onCurrentIndexChanged: soloistBgProgram = instrPrograms[currentIndex]
                     }
                 }
+
+                // Measure range selector
+                Rectangle { width: parent.width; height: 1; color: "#e0e0e0" }
+                Row {
+                    spacing: 0
+                    Label { width: 172; height: 30; text: "Measure range:"
+                            verticalAlignment: Text.AlignVCenter }
+                    Label { width: 44; height: 30; text: "From"
+                            verticalAlignment: Text.AlignVCenter; color: "#444444" }
+                    SpinBox {
+                        id: sbFrom
+                        width: 76; height: 30
+                        from: firstMeasureNo; to: measureEnd
+                        value: measureStart
+                        onValueModified: measureStart = value
+                    }
+                    Item { width: 14; height: 1 }
+                    Label { width: 26; height: 30; text: "To"
+                            verticalAlignment: Text.AlignVCenter; color: "#444444" }
+                    SpinBox {
+                        id: sbTo
+                        width: 76; height: 30
+                        from: measureStart; to: lastMeasureNo
+                        value: measureEnd
+                        onValueModified: measureEnd = value
+                    }
+                    Item { width: 10; height: 1 }
+                    Label {
+                        height: 30
+                        text: (measureStart <= firstMeasureNo && measureEnd >= lastMeasureNo)
+                              ? "(full score)"
+                              : "of " + lastMeasureNo
+                        verticalAlignment: Text.AlignVCenter
+                        color: "#888888"; font.pixelSize: 11; font.italic: true
+                    }
+                }
             }
         }
 
@@ -306,9 +416,10 @@ MuseScore {
             Label { text: "(one MP3 per ☑ row)"; color: "#666666"; font.pixelSize: 12 }
         }
 
-        // No-vocals notice (shown only when score has no recognised vocal parts)
+        // No-vocals notice (shown only when score has no recognised vocal parts;
+        // allTracks always contains at least the Accompaniment entry so check > 1)
         Label {
-            visible: allTracks.length === 0
+            visible: allTracks.length <= 1
             anchors { top: s1TrackHdr.bottom; left: parent.left; right: parent.right
                       topMargin: 14; leftMargin: 24; rightMargin: 24 }
             text: "No vocal parts found.\n" +

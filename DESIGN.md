@@ -7,6 +7,11 @@
 
 Convert a vocal-instrumental MuseScore score into per-singer learning tracks (MP3), each containing that singer's voice parts plus all instrumental parts. Classification and muting are fully instrument-agnostic — driven solely by `longName` text prefixes.
 
+Three part categories are recognised:
+- **SATB-scheme parts** — `[PREFIX] Voice Name` where PREFIX is one of the 11 supported configuration tags. Mapped into canonical voice slots and combined across sections.
+- **Soloist parts** — `[SOLO] Voice Name` (free-form name). Each soloist generates its own track and can appear as a background voice in SATB tracks.
+- **Instrumental parts** — no recognised prefix. Always present and unmuted in every track.
+
 ---
 
 ## Constraints & API Reality
@@ -15,7 +20,7 @@ Convert a vocal-instrumental MuseScore score into per-singer learning tracks (MP
 - **Classification is instrument-agnostic**: parts are identified solely by the `[PREFIX]` in `part.longName` (or `shortName` / `partName` as text fallbacks). No `instrumentId`, MIDI program, sound bank, or sound name is read at any point. A choir part named without a prefix is instrumental; a piano named `[SATB] Soprano` would be treated as soprano — the name alone decides.
 - **Muting is instrument-agnostic**: `saveMuteStates` / `applyMutesForTrack` / `restoreMuteStates` iterate all `instruments[j].channels[k]` exhaustively. A part is fully silenced regardless of how many channels or instruments it contains and regardless of what sounds those channels use (voice, piano, pizzicato, etc.).
 - **MIDI instrument selection** (optional, per output track): the user may choose a playback instrument from a curated list. The selected GM program is written to `channel.midiProgram` on all channels of all vocal parts in that track immediately before export, then restored afterward. This is independent of classification and muting — `midiProgram` is never read for any classification or muting decision.
-- **Background voices** (optional, per upper/lower family): instead of fully muting non-selected vocal parts, they can play at a reduced volume with an optional instrument override. Volume is controlled by writing to `channel.volume` (0–127), which is the plugin API's mixer-equivalent control and the only API-accessible volume lever. **Caveat**: `channel.volume` initialises the mixer channel value; in MuseScore 3's audio engine this maps to MIDI CC7, which score-embedded dynamics controllers can override mid-piece. MuseScore 4's audio engine behaviour requires verification at implementation time — if CC7 interference is observed, the feature degrades gracefully to "Off only" with a noted limitation. `channel.midiProgram` is also written for background instrument override and restored afterward. If the family's background volume is Off, those parts are muted as before.
+- **Background voices** (optional, per family): instead of fully muting non-selected vocal parts, they can play at a reduced volume with an optional instrument override. Three independent families are controlled: **upper** (S*/A* slots), **lower** (T*/B* slots), and **soloist** (`[SOLO]` parts). Volume is controlled by writing to `channel.volume` (0–127), which is the plugin API's mixer-equivalent control and the only API-accessible volume lever. **Caveat**: `channel.volume` initialises the mixer channel value; in MuseScore 3's audio engine this maps to MIDI CC7, which score-embedded dynamics controllers can override mid-piece. MuseScore 4's audio engine behaviour requires verification at implementation time — if CC7 interference is observed, the feature degrades gracefully to "Off only" with a noted limitation. `channel.midiProgram` is also written for background instrument override and restored afterward. If the family's background volume is Off, those parts are muted as before.
 - **Bracket groups are not accessible** via the plugin API ([MuseScore #28438](https://github.com/musescore/MuseScore/issues/28438)) — classification is entirely determined by the `[PREFIX]` in each part's `longName`
 - **`writeScore()` / `readScore()`** are non-functional in MS4
 - **Automated export**: `cmd("export-audio")` opens the system save dialog; the user must click Save for each track. The plugin handles all mute setup automatically.
@@ -40,15 +45,17 @@ trackgen/
 
 ## Staff Naming Scheme
 
-Staff `longName` encodes both configuration and voice role via a bracket prefix:
+Staff `longName` encodes both category and voice role via a bracket prefix:
 
 ```
 [PREFIX] Voice Name
 ```
 
-**Prefix** — one of the supported configuration tags — resolves all ambiguity about which singer tracks a stave feeds. Voice Name is the role within that configuration. The pair is looked up in a static table in `voiceTypes.js`.
+**SATB-scheme prefix** — one of the 11 supported configuration tags — resolves all ambiguity about which singer tracks a stave feeds. Voice Name is the role within that configuration. The pair is looked up in a static table in `voiceTypes.js`.
 
-Staves without a recognized `[PREFIX]` are treated as **instrumental** (always unmuted in every track).
+**`[SOLO]` prefix** — marks a soloist part. Voice Name is free-form (e.g. `[SOLO] Soprano I`, `[SOLO] Cantor`). The voice name is used verbatim as the track display name. The `[SOLO]` prefix is matched case-insensitively; if the voice name is blank the display name defaults to "Soloist".
+
+Staves without any recognized prefix are treated as **instrumental** (always unmuted in every track).
 
 Upper-voice prefixes (`[SA]`, `[SMA]`, `[SSAA]`) and lower-voice prefixes (`[TB]`, `[TBB]`, `[TTBB]`) are **independent** — any combination can coexist in the same score section.
 
@@ -130,14 +137,18 @@ Track slots: `S1` `S2` `S2Mz` `A1Mz` `A1` `A2` `T1` `T2` `T2Bar` `B1Bar` `B1` `B
 
 ### Algorithm
 
+**Optional pre-step**: if a measure range `[tickStart, tickEnd)` is provided (derived from the user-selected display numbers via `measureMap`), skip any SATB or SOLO part that has no non-rest note in that range. Instrumental parts are never skipped.
+
 1. For each `part` in `curScore.parts`, parse `part.longName` for a leading `[PREFIX]` token; if absent, try `part.shortName`, then `part.partName`
 2. Strip the prefix; look up `(prefix, trimmed voice name)` in the mapping table (case-insensitive)
-3. Append the part to each slot in the result list, or to `instrumentals` if no match (no prefix, or unrecognized prefix/voice name)
+3. Append the part to each slot in the result list; or to `soloists` if the prefix is `SOLO` (free-form voice name); or to `instrumentals` if no prefix matches
 4. After scanning all parts, build the output track list:
    - Emit one output track per non-empty slot, ordered as the slot list above.
    - **Modifier-slot rule**: S2Mz / A1Mz / T2Bar / B1Bar are only emitted if at least one modifier stave (voiceName `Mezzo-soprano` or `Baritone`) is present in that slot — non-modifier staves that happen to map there (e.g. `[SATB] Soprano → S2Mz`) do not trigger emission on their own.
    - **Deduplication**: within each sibling pair (S1/S2, A1/A2, T1/T2, B1/B2), if both slots are non-empty and contain exactly the same set of parts, collapse them into one track and mark the junior slot (S2/A2/T2/B2) as collapsed. A collapsed slot is treated as non-existent for display-name purposes below.
-5. Apply display name qualification per family:
+   - **Soloist tracks**: one track per entry in `soloists`, appended after all SATB tracks. `slotId` is `"SOLO_" + index`. No modifier-slot rule, deduplication, or display-name qualification applies.
+   - **Accompaniment track**: always appended last (added by QML, not `buildTracks`). `slotId: "ACCOMP"`, `parts: []`. All vocal parts are muted during export; only instrumentals are kept. Background voice and voice-instrument settings are ignored.
+5. Apply display name qualification per SATB family:
    - **S family**: use "Soprano 1" / "Soprano 2" when both S1 and S2 are non-empty and distinct (not collapsed); else "Soprano" for whichever is present
    - **A family**: use "Alto 1" / "Alto 2" when both A1 and A2 are non-empty and distinct; else "Alto"
    - **T family**: use "Tenor 1" / "Tenor 2" when both T1 and T2 are non-empty and distinct; else "Tenor"
@@ -167,24 +178,51 @@ Track slots: `S1` `S2` `S2Mz` `A1Mz` `A1` `A2` `T1` `T2` `T2Bar` `B1Bar` `B1` `B
 ### Exported functions
 
 ```javascript
+buildMeasureMap(score)
+// → [{ measure, displayNo, tick }]
+// displayNo matches the MuseScore UI number (0 = pickup/excluded).
+// noOffset / measureNumberOffset accumulates as a running delta.
+// Handles both MS3 ("noOffset","irregular") and MS4 ("measureNumberOffset","excludeFromNumbering")
+// property names with a || fallback.
+
+buildStaffStartMap(score)
+// → map[partIdx] = cumulative staff index offset (sum of part.nstaves)
+
+partHasNotesInRange(score, staffStart, nStaves, tickStart, tickEnd)
+// → bool — true if any staff in [staffStart, staffStart+nStaves) has a non-rest
+//   chord-rest element in the tick range [tickStart, tickEnd).
+//   Uses a Cursor per staff (cursor.filter = Segment.ChordRest, cursor.rewindToTick).
+
 parseStaff(longName)
 // → { prefix: "SATB", voiceName: "Soprano" } | null
+// Returns null for [SOLO] prefix (handled separately by _parseSolo).
 
-classifyScore(score)
+classifyScore(score, tickStart, tickEnd, staffStartMap)
 // → { slots: { S1:[Part], S2:[Part], S2Mz:[Part], A1Mz:[Part],
 //              A1:[Part], A2:[Part], T1:[Part], T2:[Part],
 //              T2Bar:[Part], B1Bar:[Part], B1:[Part], B2:[Part] },
-//     instrumentals: [Part] }
+//     instrumentals: [Part],
+//     soloists: [{part, displayName}],
+//     modifierPresent: {...},
+//     partMeta: [{prefix, voiceName}] }
+// tickStart/tickEnd/staffStartMap are optional; when provided, SATB and SOLO
+// parts with no notes in the range are skipped; instrumentals are always kept.
 
-buildTracks(slots)
-// → [{slotId, displayName, parts:[Part]}]  — non-empty slots only, ordered as above
+buildTracks(slots, modifierPresent, soloists)
+// → [{slotId, displayName, parts:[Part], isSoloist?}]
+// SATB tracks first (non-empty slots, canonical order), then one track per soloist.
+// soloists param is optional ([]).
+
+buildPartFamilyMap(slots, soloists)
+// → [{part, family:"upper"|"lower"|"solo"}]  deduplicated
+// soloists param is optional ([]).
 
 saveMuteStates(score)
 // → snapshot: [{partIdx, instrIdx, chanIdx, wasMuted}]
 
 applyMutesForTrack(score, trackParts, bgParts, instrumentalParts)
 // Mutes every part except trackParts, bgParts, and instrumentalParts.
-// bgParts = non-selected vocal parts whose family background volume is not Off.
+// bgParts here is a plain Part array (extracted from the [{part,family}] array).
 restoreMuteStates(score, snapshot)
 
 saveChannelPrograms(score)
@@ -193,6 +231,7 @@ saveChannelPrograms(score)
 applyChannelPrograms(score, track, upperProgram, lowerProgram)
 // track = {slotId, displayName, parts:[Part]}
 // Routes by slot family: S*/A* slots get upperProgram; T*/B* slots get lowerProgram.
+// No-op for SOLO_* slots (soloists have no voice-instrument picker).
 // No-op for a given family if its program is null ("Keep original").
 // Instrumental parts are never touched.
 
@@ -201,17 +240,19 @@ restoreChannelPrograms(score, snapshot)
 saveChannelVolumes(score)
 // → snapshot: [{partIdx, instrIdx, chanIdx, volume}]
 
-applyBackgroundVoices(score, bgParts, upperBgVolume, lowerBgVolume, upperBgProgram, lowerBgProgram)
-// bgParts = non-selected vocal parts where that family's background volume is not Off.
-// Routes by slot family (S*/A* → upper, T*/B* → lower).
-// Sets channel.volume = bgVolume (0–127) and, if program not null, channel.midiProgram = bgProgram.
+applyBackgroundVoices(score, bgParts,
+                      upperBgVolume, lowerBgVolume, upperBgProgram, lowerBgProgram,
+                      soloistBgVolume, soloistBgProgram)
+// bgParts = [{part, family:"upper"|"lower"|"solo"}]
+// Routes by family: upper → upper params, lower → lower params, solo → soloist params.
+// Sets channel.volume = bgVolume (0–127) and, if program ≥ 0, channel.midiProgram = bgProgram.
 
 restoreChannelVolumes(score, snapshot)
 ```
 
 ### Curated instrument list
 
-The same 8-item list is used by all four instrument pickers (upper target, lower target, upper background, lower background). Instrumental parts are unaffected by any picker.
+The same 8-item list is used by all five instrument pickers (upper target, lower target, upper background, lower background, soloist background). Instrumental parts are unaffected by any picker. Soloist tracks have no target instrument picker — their playback sound is always kept original.
 
 | Display name | GM program |
 |---|---|
@@ -241,9 +282,15 @@ Two-screen flow within a single `pluginType: "dialog"` window.
 
 ### Screen 1 — Setup
 
-Track list is computed by `buildTracks` on plugin start. All rows checked by default; user unchecks rows to skip. A 3-row settings header controls both families independently. Background instrument is disabled (greyed) when its family's background volume is Off. No configuration UI for Mz/Bar assignment — that is determined by naming rules.
+Track list is computed by `buildTracks` on plugin start. All rows checked by default; user unchecks rows to skip. A settings header controls families independently. Background instrument is disabled (greyed) when its family's background volume is Off. No configuration UI for Mz/Bar assignment — that is determined by naming rules.
 
-Example — `[SSAATTBB]` + `[SMATBB]` + `[SATB]` score:
+The **Soloist background** row (volume + instrument) appears only when at least one `[SOLO]` part is present in the score; it is hidden otherwise.
+
+The **Measure range** SpinBoxes (From / To) default to the full score. Changing them re-runs classification immediately, restricting which parts are considered active. Displayed numbers match the MuseScore UI (pickup measures are excluded from the range).
+
+The **Accompaniment** row is always present at the bottom of the track list. When exported it mutes all voice parts and keeps only instrumentals.
+
+Example — `[SSAATTBB]` + `[SMATBB]` + `[SATB]` + two soloists score (full score selected):
 
 ```
 TrackGen — Vocal Learning Tracks
@@ -252,6 +299,10 @@ TrackGen — Vocal Learning Tracks
 Voice instrument:         [Keep original ▾]        [Keep original ▾]
 Background volume:        [Off ▾]                  [Off ▾]
 Background instrument:    [Keep original ▾] (dim)  [Keep original ▾] (dim)
+─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+Soloist background:       [Off ▾]  instrument  [Keep original ▾] (dim)
+─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+Measure range:            From [  1 ↕]  To [40 ↕]  (full score)
 
 Tracks to export:                              (one MP3 per ☑ row)
 
@@ -267,6 +318,9 @@ Tracks to export:                              (one MP3 per ☑ row)
   ☑ Bass 1/Bar.     ([SSAATTBB] B1 · [SMATBB] Bar · [SATB] B)
   ☑ Bass 1          ([SSAATTBB] B1 · [SMATBB] B · [SATB] B)
   ☑ Bass 2          ([SSAATTBB] B2 · [SMATBB] B · [SATB] B)
+  ☑ Soprano I       ([SOLO] Soprano I)
+  ☑ Cantor          ([SOLO] Cantor)
+  ☑ Accompaniment   (instrumental parts only)
 
 All instrumental parts are always included in every track.
 ──────────────────────────────────────────────────────────────────────
@@ -328,7 +382,7 @@ Flow per track:
 5. User clicks "Next Track" → `restoreMuteStates` + `restoreChannelPrograms` + `restoreChannelVolumes` → advance counter → repeat
 6. After last track: restore all states, show "All done." + Close button
 
-`bgParts` for each export = all vocal parts not in the current track whose family background volume ≠ Off.
+`bgParts` for each export = all vocal parts (SATB + soloists) not in the current track whose family background volume ≠ Off. A soloist part's "family" is `"solo"`, routed to the Soloist background volume/instrument settings.
 
 "Stop & Restore" at any point restores mute states, channel programs, and channel volumes then quits.
 
@@ -399,8 +453,10 @@ Set each vocal part's **longName** (Part Properties → Part name) to `[PREFIX] 
 | `[TBB] Baritone` | Baritone modifier in a 3-part lower section |
 | `[TBB] Bass` | Bass in a 3-part lower section |
 | `[TTBB] Bass 1` | Bass 1 in a 4-part lower section (symmetric to `[SSAA] Alto 1`) |
+| `[SOLO] Soprano I` | Soloist — generates its own track, can be background in SATB tracks |
+| `[SOLO] Cantor` | Another soloist with a free-form name |
 
-Parts without a `[PREFIX]` are treated as instrumental and are always included in every track. Piano, strings, etc. need no changes.
+Parts without any prefix are treated as instrumental and are always included in every track. Piano, strings, etc. need no changes.
 
 ### Upper/lower voice independence
 

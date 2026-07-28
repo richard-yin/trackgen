@@ -2,6 +2,31 @@
 
 All notable changes to TrackGen are documented here.
 
+## [1.2.0] — 2026-07-28
+
+### Added
+
+**Measure range selector**
+- New **Measure range** row on Screen 1 (From / To SpinBoxes) restricts classification to the specified display-number range
+- Only parts with at least one non-rest note in the selected range are classified as active; instrumental parts are always included regardless of range
+- Changing the range immediately refreshes the track list; track checkboxes reset
+- Displayed measure numbers match MuseScore's UI (pickup / excluded measures get display number 0 and are omitted from the SpinBox range; per-measure `noOffset` / `measureNumberOffset` offsets are accumulated correctly)
+- When the full score is selected the hint "(full score)" is shown next to the SpinBoxes
+
+**Accompaniment-only track**
+- A dedicated **Accompaniment** track is always appended at the end of the track list
+- Exporting it mutes all voice parts (SATB + soloists) and keeps only instrumental parts unmuted; background voice and voice-instrument settings are ignored for this track
+- Track row shows the parenthetical "(instrumental parts only)"
+
+### Changed
+
+- `buildMeasureMap(score)` — new export in `voiceTypes.js`; builds `[{measure, displayNo, tick}]` used for range filtering and SpinBox initialisation; handles both MS3 property names (`noOffset`, `irregular`) and MS4 names (`measureNumberOffset`, `excludeFromNumbering`)
+- `buildStaffStartMap(score)` — new export; maps `partIdx → cumulative staff-index offset`
+- `partHasNotesInRange(score, staffStart, nStaves, tickStart, tickEnd)` — new export; cursor-based active-measure detection
+- `classifyScore(score, tickStart, tickEnd, staffStartMap)` — three new optional params for tick-range filtering
+
+---
+
 ## [1.1.0] — 2026-07-28
 
 ### Added

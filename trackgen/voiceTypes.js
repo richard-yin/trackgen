@@ -103,6 +103,67 @@ var VOICE_MAP = {
     }
 };
 
+// ─── Measure map & staff-start helpers ───────────────────────────────────────
+
+// buildMeasureMap(score)
+// → [{ measure, displayNo, tick }]
+//
+// displayNo is the user-visible measure number matching the MuseScore UI.
+// Pickup / excluded measures get displayNo = 0.
+// noOffset / measureNumberOffset is a *cumulative* running delta: adding it on
+// measure N shifts N and all subsequent measures.
+// Property names differ between MS3 plugin API ("noOffset", "irregular") and
+// MS4 after the March 2026 refactor ("measureNumberOffset", "excludeFromNumbering");
+// both are read with a || fallback.
+function buildMeasureMap(score) {
+    var list = [];
+    var m = score.firstMeasure;
+    var seqNo = 1;
+    var runningOffset = 0;
+    while (m) {
+        var excluded = !!(m.irregular || m.excludeFromNumbering);
+        var offset   = parseInt(m.noOffset || m.measureNumberOffset || 0) || 0;
+        runningOffset += offset;
+        var displayNo = excluded ? 0 : (seqNo + runningOffset);
+        if (!excluded) seqNo++;
+        var tick = m.firstSegment ? m.firstSegment.tick : -1;
+        list.push({ measure: m, displayNo: displayNo, tick: tick });
+        m = m.nextMeasure;
+    }
+    return list;
+}
+
+// buildStaffStartMap(score)
+// → map[partIdx] = cumulative staff index offset
+// Requires part.nstaves (documented in Plugin API Part class).
+function buildStaffStartMap(score) {
+    var map = [], offset = 0;
+    for (var p = 0; p < score.parts.length; p++) {
+        map[p] = offset;
+        offset += score.parts[p].nstaves || 1;
+    }
+    return map;
+}
+
+// partHasNotesInRange(score, staffStart, nStaves, tickStart, tickEnd)
+// → bool
+// Returns true if any staff of the part has at least one non-rest element
+// in the tick range [tickStart, tickEnd).
+// Uses a Cursor per staff to avoid relying on segment-level type constants.
+function partHasNotesInRange(score, staffStart, nStaves, tickStart, tickEnd) {
+    var cursor = score.newCursor();
+    cursor.filter = Segment.ChordRest;
+    for (var si = staffStart; si < staffStart + nStaves; si++) {
+        cursor.staffIdx = si;
+        cursor.rewindToTick(tickStart);
+        while (cursor.segment && cursor.tick < tickEnd) {
+            if (cursor.element && cursor.element.type !== Element.REST) return true;
+            if (!cursor.next()) break;
+        }
+    }
+    return false;
+}
+
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 // Returns { prefix:"SOLO", voiceName } if name matches [SOLO] prefix, else null.
@@ -149,13 +210,21 @@ function parseStaff(name) {
     return { prefix: prefix, voiceName: voiceName };
 }
 
-// classifyScore(score)
+// classifyScore(score, tickStart, tickEnd, staffStartMap)
 // → { slots, instrumentals, soloists, modifierPresent, partMeta }
+//
+// Optional tick range filter: when tickStart/tickEnd/staffStartMap are provided,
+// SATB and SOLO parts that have no non-rest notes in [tickStart, tickEnd) are
+// skipped entirely (they will be muted during export as if absent).
+// Instrumental parts (no recognised prefix) are always included regardless of range.
 //
 // soloists:  [{ part, displayName }]  — parts with [SOLO] prefix, in score order
 // partMeta[partIdx] = { prefix, voiceName } for all classified parts (SATB + SOLO);
 //                     undefined for pure instrumentals.
-function classifyScore(score) {
+function classifyScore(score, tickStart, tickEnd, staffStartMap) {
+    var useRange = (tickStart !== undefined && tickStart !== null &&
+                   tickEnd   !== undefined && tickEnd   !== null &&
+                   staffStartMap !== undefined && staffStartMap !== null);
     var i, p;
     var slots = {}, modifierPresent = {};
     for (i = 0; i < SLOT_ORDER.length; i++) slots[SLOT_ORDER[i]] = [];
@@ -172,12 +241,23 @@ function classifyScore(score) {
                            _parseSolo(part.shortName) ||
                            _parseSolo(part.partName);
             if (soloMeta) {
+                if (useRange) {
+                    var ss = staffStartMap[p];
+                    var ns = score.parts[p].nstaves || 1;
+                    if (!partHasNotesInRange(score, ss, ns, tickStart, tickEnd)) continue;
+                }
                 partMeta[p] = soloMeta;
                 soloists.push({ part: part, displayName: soloMeta.voiceName });
             } else {
                 instrumentals.push(part);
             }
             continue;
+        }
+
+        if (useRange) {
+            var ss2 = staffStartMap[p];
+            var ns2 = score.parts[p].nstaves || 1;
+            if (!partHasNotesInRange(score, ss2, ns2, tickStart, tickEnd)) continue;
         }
 
         partMeta[p] = parsed;
