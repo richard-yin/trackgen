@@ -66,6 +66,8 @@ Parts **without** a `[PREFIX]` are treated as **instrumental** and are always pr
 | `[SATTBB]` | Soprano · Alto · Tenor 1 · Tenor 2 · Bass 1 · Bass 2 |
 | `[SSAATB]` | Soprano 1 · Soprano 2 · Alto 1 · Alto 2 · Tenor · Bass |
 
+**Naming rule:** doubled letters (`SS`, `AA`, `TT`, `BB`) mean a *split* voice (two staves, e.g. Tenor 1 + Tenor 2); single letters mean a *unison* voice (one stave). `M` is always Mezzo-soprano (modifier between S and A). The second `B` in `TBB` is **Baritone** (modifier between T and B) — not a second Bass. The doubled `BB` in `TTBB` is **Bass 1 + Bass 2**. So `[TBB]` = Tenor · Baritone · Bass and `[TTBB]` = Tenor 1 · Tenor 2 · Bass 1 · Bass 2.
+
 Upper prefixes (`[SA]`, `[SMA]`, `[SSAA]`) and lower prefixes (`[TB]`, `[TBB]`, `[TTBB]`) are fully independent and can coexist with any combined prefix in the same score.
 
 ### Soloist parts

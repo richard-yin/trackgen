@@ -59,6 +59,17 @@ Staves without any recognized prefix are treated as **instrumental** (always unm
 
 Upper-voice prefixes (`[SA]`, `[SMA]`, `[SSAA]`) and lower-voice prefixes (`[TB]`, `[TBB]`, `[TTBB]`) are **independent** — any combination can coexist in the same score section.
 
+### Prefix naming conventions
+
+The letter sequences in prefix names follow a consistent rule:
+
+- **Doubled letters** (`SS`, `AA`, `TT`, `BB`) denote a *split* voice: two staves for singers of the same register (Soprano 1 + Soprano 2, Tenor 1 + Tenor 2, etc.).
+- **Single letters** (`S`, `A`, `T`, `B`) denote a *unison* voice: one stave for all singers of that register.
+- **`M`** always denotes Mezzo-soprano — a *modifier* voice that sits between Soprano and Alto. It produces combined tracks (Soprano 2 / Mezzo-soprano, Alto 1 / Mezzo-soprano) and is never a standalone slot.
+- **The second `B` in `TBB`** denotes Baritone — a *modifier* voice that sits between Tenor and Bass (symmetric to Mezzo-soprano between Soprano and Alto). It produces combined tracks (Tenor 2 / Baritone, Bass 1 / Baritone). The doubled `BB` in `TTBB` is Bass 1 + Bass 2, not Baritone + Bass.
+
+Consequently: `[TBB]` = Tenor + **Baritone** + Bass (3 voices, baritone modifier); `[TTBB]` = **Tenor 1 + Tenor 2** + Bass 1 + Bass 2 (4 split voices, no baritone).
+
 ### Prefix → voice → track-slot mapping
 
 Track slots: `S1` `S2` `S2Mz` `A1Mz` `A1` `A2` `T1` `T2` `T2Bar` `B1Bar` `B1` `B2`
