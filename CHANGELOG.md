@@ -2,6 +2,20 @@
 
 All notable changes to TrackGen are documented here.
 
+## [1.0.3] — 2026-07-28
+
+### Fixed
+
+- `trackgen.qml` line 611: Unicode curly quotes inside a QML string literal caused `Expected token ','` and prevented the plugin dialog from opening ([#1](https://github.com/richard-yin/trackgen/issues/1)); replaced with escaped straight quotes (`\"`)
+
+### Added
+
+- GitHub Actions CI workflow (`.github/workflows/ci.yml`): runs Jest tests and `qmllint` on every push and pull request
+- `npm run lint:qml` script: runs `qmllint` against `trackgen/trackgen.qml` locally and in CI
+- Git pre-commit hook (`.git/hooks/pre-commit`): rejects staged `.qml` files containing Unicode curly/smart quotes before they can be committed
+
+---
+
 ## [1.0.2] — 2026-07-28
 
 ### Added

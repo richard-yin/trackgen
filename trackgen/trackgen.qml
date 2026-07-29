@@ -608,8 +608,8 @@ MuseScore {
             anchors { top: s1TrackHdr.bottom; left: parent.left; right: parent.right
                       topMargin: 14; leftMargin: 24; rightMargin: 24 }
             text: "No vocal parts found.\n" +
-                  "Set each vocal staff's Part name (longName) to "[PREFIX] Voice Name",\n" +
-                  "e.g. "[SATB] Soprano". See README for details."
+                  "Set each vocal staff's Part name (longName) to \"[PREFIX] Voice Name\",\n" +
+                  "e.g. \"[SATB] Soprano\". See README for details."
             color: "#cc0000"; font.pixelSize: 12; wrapMode: Text.WordWrap
         }
 
