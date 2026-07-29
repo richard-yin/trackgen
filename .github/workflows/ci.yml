@@ -25,13 +25,13 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends qt6-declarative-dev-tools
       - name: Lint QML
-        # qmllint exits 0 (clean), 100 (warnings), or 1 (errors).
-        # We only fail on exit code 1 (real errors such as parse errors).
-        # --import disable silences "module not found" for QtQuick/MuseScore/
-        # FileIO; remaining warnings about unknown grouped property scopes are
-        # also false positives caused by the same missing types, so we treat
-        # exit code 100 as a pass.
+        # qmllint exits 0 (clean), 100 (warnings only), or 1 (errors).
+        # bash -e fires on any non-zero exit, so capture with && / || so the
+        # overall expression always succeeds, then fail only on exit code 1.
+        # --import disable silences unresolvable QtQuick/MuseScore/FileIO
+        # imports; remaining grouped-property warnings are cascading false
+        # positives from the same missing types and are also treated as pass.
         run: |
-          /usr/lib/qt6/bin/qmllint --import disable trackgen/trackgen.qml
-          RC=$?
-          [ $RC -eq 0 ] || [ $RC -eq 100 ] || exit $RC
+          /usr/lib/qt6/bin/qmllint --import disable trackgen/trackgen.qml \
+            && RC=0 || RC=$?
+          [ $RC -eq 0 ] || [ $RC -eq 100 ] || exit 1
