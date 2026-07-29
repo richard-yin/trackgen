@@ -20,7 +20,6 @@ MuseScore {
         }
     }
 
-    Component.onDestroyed: console.log("[TrackGen] Component.onDestroyed: QML instance destroyed")
 
     pluginType: "dialog"
     width:  630
