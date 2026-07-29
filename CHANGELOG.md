@@ -2,6 +2,14 @@
 
 All notable changes to TrackGen are documented here.
 
+## [1.0.6] — 2026-07-28
+
+### Fixed
+
+- `trackgen.qml` `onRun`: assigning `measureEnd = lNo` fired `onMeasureEndChanged` synchronously, calling `reclassify()` (and mutating `trackModel`, `classification`, `allVocalParts`) while `onRun` was still on the call stack — before MuseScore 4 had created the dialog window; a second explicit `reclassify()` immediately followed, resulting in two full classification runs mid-initialisation that likely caused the dialog to never appear ([#3](https://github.com/richard-yin/trackgen/issues/3)); added a `_ready` boolean guard that suppresses `onMeasureStartChanged`/`onMeasureEndChanged` during `onRun` so that exactly one `reclassify()` runs — explicitly, after all properties are set and `_ready = true`
+
+---
+
 ## [1.0.5] — 2026-07-28
 
 ### Fixed

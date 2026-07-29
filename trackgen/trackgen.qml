@@ -42,6 +42,11 @@ MuseScore {
     property int  measureStart:    1    // user-selected From measure (display number)
     property int  measureEnd:      1    // user-selected To measure (display number)
 
+    // Set to true only after onRun finishes initialising; suppresses the
+    // onMeasure*Changed handlers during setup so that reclassify() is called
+    // exactly once (explicitly) rather than also firing from property changes.
+    property bool _ready:          false
+
     // ── Trim script state ─────────────────────────────────────────────────────
     property var    trimInfo:          null   // { ss, to } — null means full range
     property bool   trimScriptWritten: false
@@ -381,8 +386,8 @@ MuseScore {
     TextEdit { id: clipHelper; visible: false; width: 1; height: 1 }
 
     // Reclassify when the user changes the measure range.
-    onMeasureStartChanged: { if (curScore && measureStart <= measureEnd) reclassify() }
-    onMeasureEndChanged:   { if (curScore && measureStart <= measureEnd) reclassify() }
+    onMeasureStartChanged: { if (_ready && curScore && measureStart <= measureEnd) reclassify() }
+    onMeasureEndChanged:   { if (_ready && curScore && measureStart <= measureEnd) reclassify() }
 
     // ── Initialisation ────────────────────────────────────────────────────────
     onRun: {
@@ -392,10 +397,10 @@ MuseScore {
             return
         }
 
-        // Reset UI and export state — the QML instance persists across
-        // invocations in MuseScore 4; without this reset, screen stays at 2
-        // or 3 from a previous run and all Item { visible: screen === N }
-        // bindings evaluate false, producing a blank dialog.
+        // Reset state — the QML instance persists across invocations in
+        // MuseScore 4.  _ready is reset first so property-change handlers
+        // remain suppressed until we finish initialising below.
+        _ready       = false
         screen       = 1
         exportQueue  = []
         exportIdx    = 0
@@ -431,10 +436,11 @@ MuseScore {
         lastMeasureNo  = lNo
         dbg("[TrackGen] onRun: measure range " + fNo + "–" + lNo +
                     " (" + measureMap.length + " entries in map)")
-        // Setting measureStart/measureEnd triggers onMeasure*Changed, but curScore
-        // isn't set in the property-change guard yet — call reclassify() explicitly.
+        // _ready is false here, so onMeasure*Changed handlers are suppressed.
+        // Set both bounds first, then call reclassify() exactly once.
         measureStart = fNo
         measureEnd   = lNo
+        _ready = true
         reclassify()
     }
 
