@@ -2,6 +2,14 @@
 
 All notable changes to TrackGen are documented here.
 
+## [1.0.4] — 2026-07-28
+
+### Fixed
+
+- `trackgen.qml` `onRun`: `curScore.path` is `undefined` for unsaved scores, causing `TypeError: Cannot call method 'lastIndexOf' of undefined` at line 396 on every launch against an unsaved score ([#2](https://github.com/richard-yin/trackgen/issues/2)); guard with `curScore.path || ""` and skip log-file setup when the score has no saved path (file logging is a no-op for unsaved scores; the `logFile.source.length === 0` guard in `dbg()` already handles this correctly)
+
+---
+
 ## [1.0.3] — 2026-07-28
 
 ### Fixed

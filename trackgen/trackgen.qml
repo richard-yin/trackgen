@@ -393,12 +393,16 @@ MuseScore {
         }
 
         // Point the log file at the score's directory and start fresh.
-        var scoreDir = curScore.path.substring(0, curScore.path.lastIndexOf("/"))
-        logFile.source = scoreDir + "/trackgen.log"
-        logFile.write("")   // truncate / create
+        // curScore.path is undefined for unsaved scores, so guard before use.
+        var scorePath = curScore.path || ""
+        if (scorePath) {
+            var scoreDir = scorePath.substring(0, scorePath.lastIndexOf("/"))
+            logFile.source = scoreDir + "/trackgen.log"
+            logFile.write("")   // truncate / create
+        }
 
         dbg("[TrackGen] onRun: score='" + curScore.title + "'" +
-                    " path='" + curScore.path + "'")
+                    " path='" + scorePath + "'")
 
         // Build measure map and staff-start map once.
         measureMap    = VT.buildMeasureMap(curScore)
