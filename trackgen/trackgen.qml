@@ -10,6 +10,15 @@ MuseScore {
     //4.4 version:      "1.0.2"
     //4.4 categoryCode: "composing-arranging-tools"
 
+    // pluginType, width, and height MUST appear before any line ending with '{'
+    // (such as Component.onCompleted: {).  ExtPluginsLoader::parseManifest reads
+    // line-by-line and breaks at the first '{' it sees inside the MuseScore block;
+    // properties declared after that line are never parsed, so pluginType would
+    // default to "Macros" and the dialog would never be shown.
+    pluginType: "dialog"
+    width:  630
+    height: 540
+
     Component.onCompleted: {
         console.log("[TrackGen] Component.onCompleted: QML instance created")
         if (mscoreMajorVersion === 4 && mscoreMinorVersion <= 3) {
@@ -19,11 +28,6 @@ MuseScore {
             categoryCode = "composing-arranging-tools"
         }
     }
-
-
-    pluginType: "dialog"
-    width:  630
-    height: 540
 
     // ── Plugin state ──────────────────────────────────────────────────────────
     property var  classification: null

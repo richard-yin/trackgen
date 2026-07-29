@@ -2,6 +2,14 @@
 
 All notable changes to TrackGen are documented here.
 
+## [1.0.7] — 2026-07-28
+
+### Fixed
+
+- `trackgen.qml`: **root cause of the blank/missing dialog in MuseScore 4.4** ([#3](https://github.com/richard-yin/trackgen/issues/3)): MuseScore 4.4's `ExtPluginsLoader::parseManifest` reads the QML file line-by-line and stops parsing at the first line that ends with `{` inside the `MuseScore {}` block; `pluginType: "dialog"` was declared *after* `Component.onCompleted: {`, so it was never seen — the manifest was created with `type = Macros` instead of `Form`, and `ExtensionsProvider::perform()` therefore called `run()` (no window) instead of `interactive()->open()` (extension viewer dialog); fix moves `pluginType`, `width`, and `height` to before `Component.onCompleted`
+
+---
+
 ## [1.0.6] — 2026-07-28
 
 ### Fixed
