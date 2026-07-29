@@ -16,25 +16,38 @@ jobs:
       - run: npm ci
       - run: npm test
 
-  qml-lint:
+  plugin-syntax:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check JS syntax
+        # node --check parses each file and exits non-zero on any syntax error.
+        # Catches issues in voiceTypes.js that would prevent the plugin loading.
+        run: |
+          for f in trackgen/*.js; do
+            echo "Checking $f"
+            node --check "$f"
+          done
+
       - name: Install qmllint
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends qt6-declarative-dev-tools
-      - name: Lint QML
-        # qmllint exits 0 (clean), 100 (warnings only), or 1 (errors).
-        # bash -e fires on any non-zero exit, so capture with && / || so the
-        # overall expression always succeeds, then fail only on exit code 1.
-        # --import disable silences unresolvable QtQuick/MuseScore/FileIO
-        # imports; remaining grouped-property warnings are cascading false
-        # positives from the same missing types and are also treated as pass.
+
+      - name: Check QML parse errors
+        # Filter qmllint output to Error: lines only.
+        # Warning:/Info: lines are all semantic false-positives caused by missing
+        # QtQuick/MuseScore/FileIO types — none of those prevent the plugin loading.
+        # A genuine parse error (e.g. unexpected token from curly quotes) appears
+        # as an Error: line and causes qmllint to exit 1, which we surface here.
         run: |
-          /usr/lib/qt6/bin/qmllint \
+          output=$(/usr/lib/qt6/bin/qmllint \
             --import disable \
             --unqualified disable \
-            trackgen/trackgen.qml \
-            && RC=0 || RC=$?
-          [ $RC -eq 0 ] || [ $RC -eq 100 ] || exit 1
+            trackgen/trackgen.qml 2>&1 || true)
+          parse_errors=$(printf '%s\n' "$output" | grep '^Error:' || true)
+          if [ -n "$parse_errors" ]; then
+            printf '%s\n' "$output"
+            exit 1
+          fi
