@@ -2,6 +2,14 @@
 
 All notable changes to TrackGen are documented here.
 
+## [1.0.5] — 2026-07-28
+
+### Fixed
+
+- `trackgen.qml` `onRun`: the QML instance persists across invocations in MuseScore 4; `screen` was left at `2` or `3` from a previous run, making all `visible: screen === N` items false on re-invocation and producing a blank dialog ([#3](https://github.com/richard-yin/trackgen/issues/3)); `onRun` now resets `screen`, `exportQueue`, `exportIdx`, `muteSnap`, `progSnap`, and `volSnap` before re-initializing
+
+---
+
 ## [1.0.4] — 2026-07-28
 
 ### Fixed

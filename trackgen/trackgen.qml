@@ -392,6 +392,17 @@ MuseScore {
             return
         }
 
+        // Reset UI and export state — the QML instance persists across
+        // invocations in MuseScore 4; without this reset, screen stays at 2
+        // or 3 from a previous run and all Item { visible: screen === N }
+        // bindings evaluate false, producing a blank dialog.
+        screen       = 1
+        exportQueue  = []
+        exportIdx    = 0
+        muteSnap     = null
+        progSnap     = null
+        volSnap      = null
+
         // Point the log file at the score's directory and start fresh.
         // curScore.path is undefined for unsaved scores, so guard before use.
         var scorePath = curScore.path || ""
