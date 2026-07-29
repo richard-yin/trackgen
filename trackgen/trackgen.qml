@@ -600,6 +600,7 @@ MuseScore {
                     SpinBox {
                         id: sbFrom
                         width: 76; height: 30
+                        editable: true
                         from: firstMeasureNo; to: measureEnd
                         value: measureStart
                         onValueModified: measureStart = value
@@ -610,6 +611,7 @@ MuseScore {
                     SpinBox {
                         id: sbTo
                         width: 76; height: 30
+                        editable: true
                         from: measureStart; to: lastMeasureNo
                         value: measureEnd
                         onValueModified: measureEnd = value

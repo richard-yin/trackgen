@@ -2,6 +2,14 @@
 
 All notable changes to TrackGen are documented here.
 
+## [1.0.8] — 2026-07-29
+
+### Changed
+
+- `trackgen.qml`: measure range `SpinBox` controls (`sbFrom`, `sbTo`) now have `editable: true`, allowing the user to type measure numbers directly instead of only clicking the up/down arrows
+
+---
+
 ## [1.0.7] — 2026-07-28
 
 ### Fixed
