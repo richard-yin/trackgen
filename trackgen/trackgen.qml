@@ -11,6 +11,7 @@ MuseScore {
     //4.4 categoryCode: "composing-arranging-tools"
 
     Component.onCompleted: {
+        console.log("[TrackGen] Component.onCompleted: QML instance created")
         if (mscoreMajorVersion === 4 && mscoreMinorVersion <= 3) {
             title        = "TrackGen"
             description  = "Generate per-singer vocal learning tracks"
@@ -18,6 +19,8 @@ MuseScore {
             categoryCode = "composing-arranging-tools"
         }
     }
+
+    Component.onDestroyed: console.log("[TrackGen] Component.onDestroyed: QML instance destroyed")
 
     pluginType: "dialog"
     width:  630
@@ -202,27 +205,32 @@ MuseScore {
         var isFullRange = (measureStart <= firstMeasureNo && measureEnd >= lastMeasureNo)
         dbg("[TrackGen] reclassify: measures " + measureStart + "–" + measureEnd +
                     " fullRange=" + isFullRange)
-        if (isFullRange) {
-            classification = VT.classifyScore(curScore)
-        } else {
-            var tr = tickRangeForDisplayRange(measureStart, measureEnd)
-            classification = VT.classifyScore(curScore, tr.tickStart, tr.tickEnd, staffStartMap)
-        }
-        allTracks     = VT.buildTracks(classification.slots, classification.modifierPresent,
-                                       classification.soloists)
-        // Append the accompaniment-only pseudo-track.
-        allTracks = allTracks.concat([{
-            slotId: "ACCOMP", displayName: "Accompaniment", parts: [], isAccomp: true
-        }])
-        allVocalParts = VT.buildPartFamilyMap(classification.slots, classification.soloists)
-        trackModel.clear()
-        for (var i = 0; i < allTracks.length; i++) {
-            trackModel.append({
-                trackName:    allTracks[i].displayName,
-                paren:        computeParenthetical(allTracks[i]),
-                trackChecked: true,
-                trackIdx:     i
-            })
+        try {
+            if (isFullRange) {
+                classification = VT.classifyScore(curScore)
+            } else {
+                var tr = tickRangeForDisplayRange(measureStart, measureEnd)
+                classification = VT.classifyScore(curScore, tr.tickStart, tr.tickEnd, staffStartMap)
+            }
+            allTracks     = VT.buildTracks(classification.slots, classification.modifierPresent,
+                                           classification.soloists)
+            allTracks = allTracks.concat([{
+                slotId: "ACCOMP", displayName: "Accompaniment", parts: [], isAccomp: true
+            }])
+            allVocalParts = VT.buildPartFamilyMap(classification.slots, classification.soloists)
+            trackModel.clear()
+            for (var i = 0; i < allTracks.length; i++) {
+                trackModel.append({
+                    trackName:    allTracks[i].displayName,
+                    paren:        computeParenthetical(allTracks[i]),
+                    trackChecked: true,
+                    trackIdx:     i
+                })
+            }
+        } catch(e) {
+            console.log("[TrackGen] reclassify: EXCEPTION: " + e)
+            _flushLog()
+            return
         }
         dbg("[TrackGen] reclassify done: " + allTracks.length + " track(s) in model" +
                     " (incl. Accompaniment), " + allVocalParts.length + " vocal part(s)")
@@ -441,7 +449,17 @@ MuseScore {
         measureStart = fNo
         measureEnd   = lNo
         _ready = true
-        reclassify()
+        console.log("[TrackGen] onRun: about to call reclassify(), _ready=" + _ready + " screen=" + screen)
+        try {
+            reclassify()
+        } catch(e) {
+            console.log("[TrackGen] onRun: reclassify() threw: " + e)
+            quit()
+            return
+        }
+        console.log("[TrackGen] onRun: DONE, screen=" + screen +
+                    " allTracks=" + allTracks.length +
+                    " _ready=" + _ready)
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -450,6 +468,7 @@ MuseScore {
     Item {
         anchors.fill: parent
         visible: screen === 1
+        onVisibleChanged: console.log("[TrackGen] screen1 visible=" + visible)
 
         // Title ────────────────────────────────────────────────────────────────
         Label {
@@ -708,6 +727,7 @@ MuseScore {
     Item {
         anchors.fill: parent
         visible: screen === 2
+        onVisibleChanged: console.log("[TrackGen] screen2 visible=" + visible)
 
         // Progress header ─────────────────────────────────────────────────────
         Label {
@@ -798,6 +818,7 @@ MuseScore {
     Item {
         anchors.fill: parent
         visible: screen === 3
+        onVisibleChanged: console.log("[TrackGen] screen3 visible=" + visible)
 
         // Summary ──────────────────────────────────────────────────────────────
         Label {
