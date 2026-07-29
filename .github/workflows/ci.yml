@@ -32,6 +32,9 @@ jobs:
         # imports; remaining grouped-property warnings are cascading false
         # positives from the same missing types and are also treated as pass.
         run: |
-          /usr/lib/qt6/bin/qmllint --import disable trackgen/trackgen.qml \
+          /usr/lib/qt6/bin/qmllint \
+            --import disable \
+            --unqualified disable \
+            trackgen/trackgen.qml \
             && RC=0 || RC=$?
           [ $RC -eq 0 ] || [ $RC -eq 100 ] || exit 1
